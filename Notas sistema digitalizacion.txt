@@ -1,0 +1,108 @@
+216013731 VEIZAGA NAZARO SHARON KARINA
+220053200 SUAREZ CRUZ RAQUEL
+
+
+
+
+
+
+
+
+
+
+¿CONSTANCIA DE CAMBIO DE CARRERA INTER - AREA 
+(Cambio de carrera de otra facultad)
+
+
+
+Se halla inscrito el nacimiento de
+CERTIFICADO DE NA
+
+CONSTANCIA DE CAMBIO DE CARRERA INTER - AREA (Cambio de carrera de otra facultad)
+
+diploma
+diploma
+Al haber concluido los estudios de Educación Secundaria Comunitaria 
+Productiva, quedando
+
+LA DIRECCIÓN DEPARTAMENTAL DE
+EDUCACIÓN DE SANTA CRUZ, AUTENTICA Y 
+LEGALIZA EL PRESENTE DOCUMENTO DE 
+DIPLOMA DE BACHILLER DE
+
+CÉDULA OE 
+ÍDENTÍDAD
+
+FICHA DE ACTUALIZACIÓN DATOS PERSONALES
+
+
+
+
+FORMAS DE INGRESO A LA UNIVERSIDAD AUTONOMA GABRIEL RENE MORENO (anverso)
+
+CARRERA ELEGIDA POR EL ESTUDIANTE
+DATOS DE UBICACION DEL FILE DEL ESTUDIANTE
+Datos que deben ser llenados por el personal de adiciones y registros de la U.A.G.M.
+
+FORMAS DE INGRESO A LA UNIVERSIDAD AUTONOMA GABRIEL RENE MORENO (reverso)
+UNIVERSIDADES DE SISTEMA
+
+UNIVERSIDADES DE SISTEMA
+PAISES
+
+
+
+SEGURO SOCIAL UNIVERSITARIO
+SOLICITUD DE INCLUSIÓN EN BASE DE DATOS PARA AFILIACION
+AL S.S.U.E. Y DECLARACION JURADA DEL UNIVERSITARIO
+Seguro de Salud a corto plazo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+sucede que tenemos muchos registros de personas que en su registro se le asignan muchos tipos de documentos, por ejemplo:
+una persona tiene estos documentos:
+constancia de cambio de carrera
+comprobante de pago por cambio de carrera
+solicitud de cambio de carrera
+Historico academico
+certificado de no deudor
+Test Psicotecnico
+fotocopia de carnet de identidad
+solicitud de retiro voluntario
+recibo de retiro temporal sistema semestralizado
+certificado de no deudor
+FORMULARIO DE APLICACIÓN DE
+INCENTIVO EMPADRONADOR CENSO 2024
+certificado de nacimiento
+diploma de bachiller anverso
+diploma de bachiller reverso
+ficha de actualización de datos personales anverso
+ficha de actualización de datos personales reverso
+test psicotecnico
+seguro social universitario anverso
+seguro social universitario reverso
+digamos que cada persona tiene esos documentos, pero hay algunos documentos que no los tienen todos, y cada un pdf es el escaneado de cada persona y dentro de cada pdf estan escaneados esos documentos.
+Problema
+en esos pdfs no siguen un orden, estan en diferente orden, y pues quisiera un sistema que se carguen multiples pdf, cada pdf pertenece a una persona y que de alguna manera se cargue cada documento en un espacio asignado para mostrarse en el sistema de cada persona
