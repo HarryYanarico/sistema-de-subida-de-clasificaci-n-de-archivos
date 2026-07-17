@@ -4,12 +4,18 @@ export const CREATE_TIPO_DOCUMENTO = gql`
   mutation CreateTipoDocumento(
     $nombre: String!
     $palabrasClave: String!
+    $requiere: String
+    $excluye: String
+    $scoreMinimo: Int
     $esObligatorio: Boolean
     $orden: Int
   ) {
     createTipoDocumento(
       nombre: $nombre
       palabrasClave: $palabrasClave
+      requiere: $requiere
+      excluye: $excluye
+      scoreMinimo: $scoreMinimo
       esObligatorio: $esObligatorio
       orden: $orden
     ) {
@@ -18,6 +24,9 @@ export const CREATE_TIPO_DOCUMENTO = gql`
         nombre
         slug
         palabrasClave
+        requiere
+        excluye
+        scoreMinimo
         esObligatorio
         orden
       }
@@ -32,6 +41,9 @@ export const UPDATE_TIPO_DOCUMENTO = gql`
     $id: Int!
     $nombre: String
     $palabrasClave: String
+    $requiere: String
+    $excluye: String
+    $scoreMinimo: Int
     $esObligatorio: Boolean
     $orden: Int
     $activo: Boolean
@@ -40,6 +52,9 @@ export const UPDATE_TIPO_DOCUMENTO = gql`
       id: $id
       nombre: $nombre
       palabrasClave: $palabrasClave
+      requiere: $requiere
+      excluye: $excluye
+      scoreMinimo: $scoreMinimo
       esObligatorio: $esObligatorio
       orden: $orden
       activo: $activo
@@ -49,6 +64,9 @@ export const UPDATE_TIPO_DOCUMENTO = gql`
         nombre
         slug
         palabrasClave
+        requiere
+        excluye
+        scoreMinimo
         esObligatorio
         orden
         activo

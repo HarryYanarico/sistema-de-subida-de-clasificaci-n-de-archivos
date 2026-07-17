@@ -100,5 +100,7 @@ MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
 MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'digitalizacion')
 MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'False').lower() == 'true'
 
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800

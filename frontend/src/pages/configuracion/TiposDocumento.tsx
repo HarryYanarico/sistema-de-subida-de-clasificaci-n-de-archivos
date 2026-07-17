@@ -15,11 +15,22 @@ import { Plus, Trash2, Pencil } from 'lucide-react'
 interface TipoForm {
   nombre: string
   palabrasClave: string[]
+  requiere: string
+  excluye: string
+  scoreMinimo: number
   esObligatorio: boolean
   orden: number
 }
 
-const emptyForm: TipoForm = { nombre: '', palabrasClave: [], esObligatorio: false, orden: 0 }
+const emptyForm: TipoForm = {
+  nombre: '',
+  palabrasClave: [],
+  requiere: '',
+  excluye: '',
+  scoreMinimo: 3,
+  esObligatorio: false,
+  orden: 0,
+}
 
 export function TiposDocumento() {
   const [createOpen, setCreateOpen] = useState(false)
@@ -41,6 +52,9 @@ export function TiposDocumento() {
         variables: {
           nombre: form.nombre,
           palabrasClave: form.palabrasClave.join(', '),
+          requiere: form.requiere,
+          excluye: form.excluye,
+          scoreMinimo: form.scoreMinimo,
           esObligatorio: form.esObligatorio,
           orden: form.orden,
         },
@@ -62,6 +76,9 @@ export function TiposDocumento() {
     setForm({
       nombre: tipo.nombre,
       palabrasClave: tipo.palabrasClave ? tipo.palabrasClave.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      requiere: tipo.requiere || '',
+      excluye: tipo.excluye || '',
+      scoreMinimo: tipo.scoreMinimo || 3,
       esObligatorio: tipo.esObligatorio,
       orden: tipo.orden,
     })
@@ -77,6 +94,9 @@ export function TiposDocumento() {
           id: Number(editId),
           nombre: form.nombre,
           palabrasClave: form.palabrasClave.join(', '),
+          requiere: form.requiere,
+          excluye: form.excluye,
+          scoreMinimo: form.scoreMinimo,
           esObligatorio: form.esObligatorio,
           orden: form.orden,
         },
@@ -122,17 +142,57 @@ export function TiposDocumento() {
         />
       </div>
       <div className="space-y-2">
-        <Label>Palabras Clave *</Label>
+        <Label>Palabras Clave (palabra:peso) *</Label>
         <KeywordInput
           value={form.palabrasClave}
           onChange={(keywords) => setForm({ ...form, palabrasClave: keywords })}
-          placeholder="Escribir y presionar Enter"
+          placeholder="Ej: certificado:5, nacimiento:4"
         />
         <p className="text-xs text-muted-foreground">
-          Palabras o frases que aparecen en el documento para clasificación automática
+          Formato: palabra:peso (peso 1-5). Mayor peso = mayor prioridad en la clasificación.
         </p>
       </div>
       <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor={`requiere-${mode}`}>Requiere (keywords)</Label>
+          <Input
+            id={`requiere-${mode}`}
+            value={form.requiere}
+            onChange={(e) => setForm({ ...form, requiere: e.target.value })}
+            placeholder="Ej: certificado, nacimiento"
+          />
+          <p className="text-xs text-muted-foreground">
+            Palabras que DEBEN estar en el texto para clasificar
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`excluye-${mode}`}>Excluye (slugs)</Label>
+          <Input
+            id={`excluye-${mode}`}
+            value={form.excluye}
+            onChange={(e) => setForm({ ...form, excluye: e.target.value })}
+            placeholder="Ej: diploma-bachiller-reverso"
+          />
+          <p className="text-xs text-muted-foreground">
+            Slugs de tipos que se excluyen mutuamente
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor={`scoreMinimo-${mode}`}>Score Mínimo</Label>
+          <Input
+            id={`scoreMinimo-${mode}`}
+            type="number"
+            min={1}
+            max={20}
+            value={form.scoreMinimo}
+            onChange={(e) => setForm({ ...form, scoreMinimo: parseInt(e.target.value) || 3 })}
+          />
+          <p className="text-xs text-muted-foreground">
+            Score ponderado mínimo para clasificar
+          </p>
+        </div>
         <div className="space-y-2">
           <Label htmlFor={`orden-${mode}`}>Orden</Label>
           <Input
@@ -150,7 +210,7 @@ export function TiposDocumento() {
             onChange={(e) => setForm({ ...form, esObligatorio: e.target.checked })}
             className="h-4 w-4"
           />
-          <Label htmlFor={`obligatorio-${mode}`}>Documento Obligatorio</Label>
+          <Label htmlFor={`obligatorio-${mode}`}>Obligatorio</Label>
         </div>
       </div>
       <div className="flex justify-end gap-2">
@@ -173,7 +233,7 @@ export function TiposDocumento() {
               Nuevo Tipo
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Crear Tipo de Documento</DialogTitle>
             </DialogHeader>
@@ -193,10 +253,12 @@ export function TiposDocumento() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Orden</TableHead>
+                  <TableHead>Ord.</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Palabras Clave</TableHead>
-                  <TableHead>Obligatorio</TableHead>
+                  <TableHead>Requiere</TableHead>
+                  <TableHead>Score</TableHead>
+                  <TableHead>Obl.</TableHead>
                   <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -213,6 +275,22 @@ export function TiposDocumento() {
                           </Badge>
                         ))}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {tipo.requiere ? (
+                        <div className="flex flex-wrap gap-1">
+                          {tipo.requiere.split(',').map((r: string, i: number) => (
+                            <Badge key={i} variant="outline" className="text-xs">
+                              {r.trim()}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">{'>'}= {tipo.scoreMinimo}</Badge>
                     </TableCell>
                     <TableCell>
                       {tipo.esObligatorio ? (
@@ -248,7 +326,7 @@ export function TiposDocumento() {
       </Card>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Editar Tipo de Documento</DialogTitle>
           </DialogHeader>

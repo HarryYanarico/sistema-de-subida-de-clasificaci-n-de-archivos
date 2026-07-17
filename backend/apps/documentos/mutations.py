@@ -5,17 +5,39 @@ from .schema import TipoDocumentoType, DocumentoType
 
 
 def clasificar_documento(doc):
-    tipos = TipoDocumento.objects.filter(activo=True)
-    mejor_tipo = None
-    max_coincidencias = 0
     texto_lower = doc.texto_extraido.lower()
-    for tipo in tipos:
-        palabras = tipo.lista_palabras_clave
-        coincidencias = sum(1 for p in palabras if p in texto_lower)
-        if coincidencias > max_coincidencias:
-            max_coincidencias = coincidencias
+    mejor_tipo = None
+    max_score = 0
+
+    for tipo in TipoDocumento.objects.filter(activo=True):
+        if tipo.lista_requiere:
+            tiene_requerida = False
+            for palabra in tipo.lista_requiere:
+                if palabra in texto_lower:
+                    tiene_requerida = True
+                    break
+            if not tiene_requerida:
+                continue
+
+        if tipo.lista_excluye:
+            excluido = False
+            for slug in tipo.lista_excluye:
+                if slug in texto_lower:
+                    excluido = True
+                    break
+            if excluido:
+                continue
+
+        score = 0
+        for palabra, peso in tipo.lista_palabras_clave_con_pesos:
+            if palabra in texto_lower:
+                score += peso
+
+        if score >= tipo.score_minimo and score > max_score:
+            max_score = score
             mejor_tipo = tipo
-    if mejor_tipo and max_coincidencias > 0:
+
+    if mejor_tipo and max_score > 0:
         doc.tipo_documento = mejor_tipo
         doc.estado = 'clasificado'
     else:
@@ -34,6 +56,9 @@ class CreateTipoDocumento(graphene.Mutation):
     class Arguments:
         nombre = graphene.String(required=True)
         palabras_clave = graphene.String(required=True)
+        requiere = graphene.String()
+        excluye = graphene.String()
+        score_minimo = graphene.Int()
         es_obligatorio = graphene.Boolean()
         orden = graphene.Int()
 
@@ -41,7 +66,8 @@ class CreateTipoDocumento(graphene.Mutation):
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, nombre, palabras_clave, es_obligatorio=False, orden=0):
+    def mutate(self, info, nombre, palabras_clave, requiere='', excluye='',
+               score_minimo=3, es_obligatorio=False, orden=0):
         try:
             slug = re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
             if TipoDocumento.objects.filter(slug=slug).exists():
@@ -50,6 +76,9 @@ class CreateTipoDocumento(graphene.Mutation):
                 nombre=nombre,
                 slug=slug,
                 palabras_clave=palabras_clave,
+                requiere=requiere,
+                excluye=excluye,
+                score_minimo=score_minimo,
                 es_obligatorio=es_obligatorio,
                 orden=orden,
             )
@@ -64,6 +93,9 @@ class UpdateTipoDocumento(graphene.Mutation):
         id = graphene.Int(required=True)
         nombre = graphene.String()
         palabras_clave = graphene.String()
+        requiere = graphene.String()
+        excluye = graphene.String()
+        score_minimo = graphene.Int()
         es_obligatorio = graphene.Boolean()
         orden = graphene.Int()
         activo = graphene.Boolean()
@@ -72,7 +104,8 @@ class UpdateTipoDocumento(graphene.Mutation):
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, id, nombre=None, palabras_clave=None, es_obligatorio=None, orden=None, activo=None):
+    def mutate(self, info, id, nombre=None, palabras_clave=None, requiere=None,
+               excluye=None, score_minimo=None, es_obligatorio=None, orden=None, activo=None):
         try:
             tipo = TipoDocumento.objects.filter(id=id).first()
             if not tipo:
@@ -82,6 +115,12 @@ class UpdateTipoDocumento(graphene.Mutation):
                 tipo.slug = re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
             if palabras_clave is not None:
                 tipo.palabras_clave = palabras_clave
+            if requiere is not None:
+                tipo.requiere = requiere
+            if excluye is not None:
+                tipo.excluye = excluye
+            if score_minimo is not None:
+                tipo.score_minimo = score_minimo
             if es_obligatorio is not None:
                 tipo.es_obligatorio = es_obligatorio
             if orden is not None:
@@ -156,7 +195,6 @@ class ClasificarDocumento(graphene.Mutation):
             if not doc.texto_extraido:
                 return ClasificarDocumento(documento=None, success=False, message="No hay texto extraído para clasificar")
 
-            doc_anterior = doc.tipo_documento
             clasificar_documento(doc)
 
             if doc.tipo_documento:

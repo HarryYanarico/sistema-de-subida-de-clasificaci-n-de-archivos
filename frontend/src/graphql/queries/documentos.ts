@@ -7,6 +7,9 @@ export const GET_TIPOS_DOCUMENTO = gql`
       nombre
       slug
       palabrasClave
+      requiere
+      excluye
+      scoreMinimo
       esObligatorio
       orden
       activo

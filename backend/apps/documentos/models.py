@@ -6,7 +6,19 @@ class TipoDocumento(models.Model):
     nombre = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     palabras_clave = models.TextField(
-        help_text="Palabras clave separadas por coma para clasificación automática"
+        help_text="Formato: palabra:peso,palabra:peso (peso 1-5, default 1)"
+    )
+    requiere = models.TextField(
+        blank=True, default='',
+        help_text="Palabras que DEBEN estar presentes para clasificar (separadas por coma)"
+    )
+    excluye = models.TextField(
+        blank=True, default='',
+        help_text="Slugs de tipos que se excluyen mutuamente (separados por coma)"
+    )
+    score_minimo = models.IntegerField(
+        default=3,
+        help_text="Score mínimo ponderado para clasificar localmente"
     )
     es_obligatorio = models.BooleanField(default=False)
     orden = models.IntegerField(default=0)
@@ -26,6 +38,34 @@ class TipoDocumento(models.Model):
     @property
     def lista_palabras_clave(self):
         return [p.strip().lower() for p in self.palabras_clave.split(',') if p.strip()]
+
+    @property
+    def lista_palabras_clave_con_pesos(self):
+        resultado = []
+        for item in self.palabras_clave.split(','):
+            item = item.strip()
+            if not item:
+                continue
+            if ':' in item:
+                partes = item.split(':')
+                palabra = partes[0].strip().lower()
+                try:
+                    peso = int(partes[1].strip())
+                except (ValueError, IndexError):
+                    peso = 1
+            else:
+                palabra = item.lower()
+                peso = 1
+            resultado.append((palabra, max(1, min(5, peso))))
+        return resultado
+
+    @property
+    def lista_requiere(self):
+        return [r.strip().lower() for r in self.requiere.split(',') if r.strip()]
+
+    @property
+    def lista_excluye(self):
+        return [e.strip() for e in self.excluye.split(',') if e.strip()]
 
 
 class Documento(models.Model):
