@@ -112,7 +112,6 @@ class UpdateTipoDocumento(graphene.Mutation):
                 return UpdateTipoDocumento(tipo_documento=None, success=False, message="Tipo no encontrado")
             if nombre is not None:
                 tipo.nombre = nombre
-                tipo.slug = re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
             if palabras_clave is not None:
                 tipo.palabras_clave = palabras_clave
             if requiere is not None:

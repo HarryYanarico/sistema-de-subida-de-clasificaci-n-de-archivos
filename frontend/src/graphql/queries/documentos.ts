@@ -29,7 +29,6 @@ export const GET_DOCUMENTOS_PERSONA = gql`
           slug
           esObligatorio
         }
-        archivoPagina
         paginaNumero
         textoExtraido
         estado

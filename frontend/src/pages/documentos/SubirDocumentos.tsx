@@ -32,7 +32,7 @@ function extraerCodigo(filename: string): string {
 }
 
 function esCodigoValido(codigo: string): boolean {
-  return /^\d{8,9}$/.test(codigo)
+  return /^\d{5,}$/.test(codigo)
 }
 
 export function SubirDocumentos() {
@@ -140,7 +140,7 @@ export function SubirDocumentos() {
         <CardHeader>
           <CardTitle>Archivos PDF</CardTitle>
           <CardDescription>
-            Cada archivo debe llamarse con el código de registro del estudiante (ej: 12345678.pdf)
+            Cada archivo debe llamarse con el código de registro del estudiante (5+ dígitos, ej: 12345678.pdf)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -176,7 +176,7 @@ export function SubirDocumentos() {
                 </>
               )}
               <p className="text-xs text-muted-foreground">
-                Nombre del archivo: código de 8-9 dígitos (ej: 12345678.pdf)
+                Nombre del archivo: código de 5+ dígitos (ej: 12345678.pdf)
               </p>
             </div>
             <input

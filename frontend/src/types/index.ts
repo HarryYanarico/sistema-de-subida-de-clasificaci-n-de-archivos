@@ -30,7 +30,6 @@ export interface Documento {
   persona: Persona;
   tipoDocumento?: TipoDocumento;
   archivoOriginal: string;
-  archivoPagina: string;
   paginaNumero: number;
   textoExtraido: string;
   estado: 'clasificado' | 'pendiente' | 'verificado';

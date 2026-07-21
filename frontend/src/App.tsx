@@ -8,6 +8,7 @@ import { RegistrarPersona } from './pages/personas/RegistrarPersona'
 import { CasilleroDocumentos } from './pages/personas/CasilleroDocumentos'
 import { TiposDocumento } from './pages/configuracion/TiposDocumento'
 import { SubirDocumentos } from './pages/documentos/SubirDocumentos'
+import { DocumentosPendientes } from './pages/documentos/DocumentosPendientes'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -42,6 +43,7 @@ function App() {
         <Route path="/personas/nueva" element={<RegistrarPersona />} />
         <Route path="/personas/:id" element={<CasilleroDocumentos />} />
         <Route path="/documentos/subir" element={<SubirDocumentos />} />
+        <Route path="/documentos/pendientes" element={<DocumentosPendientes />} />
         <Route path="/configuracion/tipos-documento" element={<TiposDocumento />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
