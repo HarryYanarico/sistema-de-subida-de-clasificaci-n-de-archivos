@@ -30,16 +30,6 @@ class MinIOService:
         )
         return key
 
-    def upload_pagina(self, persona_codigo: str, pagina_num: int, file_content: bytes) -> str:
-        key = f"personas/{persona_codigo}/paginas/pagina_{pagina_num:03d}.pdf"
-        self.client.put_object(
-            Bucket=self.bucket,
-            Key=key,
-            Body=file_content,
-            ContentType='application/pdf',
-        )
-        return key
-
     def get_file(self, key: str) -> bytes:
         response = self.client.get_object(Bucket=self.bucket, Key=key)
         return response['Body'].read()

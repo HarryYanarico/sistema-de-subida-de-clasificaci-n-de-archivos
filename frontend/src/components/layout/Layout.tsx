@@ -6,7 +6,8 @@ import {
   LogOut,
   Menu,
   X,
-  FileText
+  FileText,
+  AlertCircle
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Personas', href: '/personas', icon: Users },
   { name: 'Subir Documentos', href: '/documentos/subir', icon: Upload },
+  { name: 'Documentos Pendientes', href: '/documentos/pendientes', icon: AlertCircle },
   { name: 'Tipos de Documento', href: '/configuracion/tipos-documento', icon: FileText },
 ]
 

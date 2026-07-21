@@ -80,7 +80,10 @@ class Documento(models.Model):
         TipoDocumento, on_delete=models.SET_NULL, null=True, blank=True, related_name='documentos'
     )
     archivo_original = models.CharField(max_length=500, help_text="Ruta del PDF original en MinIO")
-    archivo_pagina = models.CharField(max_length=500, help_text="Ruta de la página individual en MinIO")
+    archivo_pagina = models.CharField(
+        max_length=500, null=True, blank=True,
+        help_text="Ruta de la página individual en MinIO (obsoleto, se extrae on-the-fly)"
+    )
     pagina_numero = models.IntegerField()
     texto_extraido = models.TextField(blank=True, default='')
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')

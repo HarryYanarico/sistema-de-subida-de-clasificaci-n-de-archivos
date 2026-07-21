@@ -28,11 +28,6 @@ class PDFProcessor:
             page = doc.load_page(page_num)
             text = page.get_text()
 
-            pdf_page = fitz.open()
-            pdf_page.insert_pdf(doc, from_page=page_num, to_page=page_num)
-            page_bytes = pdf_page.tobytes()
-            page_key = self.storage.upload_pagina(persona_codigo, page_num + 1, page_bytes)
-
             tipo_documento = None
 
             if not self._is_blank(text):
@@ -46,11 +41,8 @@ class PDFProcessor:
                 'pagina_numero': page_num + 1,
                 'texto_extraido': text,
                 'archivo_original': original_key,
-                'archivo_pagina': page_key,
                 'tipo_documento': tipo_documento,
             })
-
-            pdf_page.close()
 
         doc.close()
         return results

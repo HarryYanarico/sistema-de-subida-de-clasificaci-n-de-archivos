@@ -41,7 +41,7 @@ def seed_tipos_documento(apps, schema_editor):
             'requiere': 'historico',
             'excluye': '',
             'score_minimo': 5,
-            'es_obligatorio': True,
+            'es_obligatorio': False,
             'orden': 4,
         },
         {
@@ -51,7 +51,7 @@ def seed_tipos_documento(apps, schema_editor):
             'requiere': 'deudor',
             'excluye': '',
             'score_minimo': 5,
-            'es_obligatorio': True,
+            'es_obligatorio': False,
             'orden': 5,
         },
         {
@@ -61,17 +61,17 @@ def seed_tipos_documento(apps, schema_editor):
             'requiere': 'psicotecnico',
             'excluye': '',
             'score_minimo': 5,
-            'es_obligatorio': True,
+            'es_obligatorio': False,
             'orden': 6,
         },
         {
             'nombre': 'Fotocopia de Carnet de Identidad',
-            'slug': 'fotocopia-carnet-identidad',
+            'slug': 'fotocopia-de-carnet-de-identidad',
             'palabras_clave': 'carnet:5,identidad:4,cedula:5,fotocopia:3,republica:3,bolivia:2,documento personal:4,direccion general:3,registro civil:3',
             'requiere': 'carnet',
             'excluye': '',
             'score_minimo': 5,
-            'es_obligatorio': True,
+            'es_obligatorio': False,
             'orden': 7,
         },
         {
@@ -151,7 +151,7 @@ def seed_tipos_documento(apps, schema_editor):
             'requiere': 'ficha',
             'excluye': 'ficha-datos-anverso',
             'score_minimo': 5,
-            'es_obligatorio': True,
+            'es_obligatorio': False,
             'orden': 15,
         },
         {

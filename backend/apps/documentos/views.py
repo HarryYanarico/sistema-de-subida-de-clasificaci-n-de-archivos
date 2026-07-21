@@ -39,7 +39,6 @@ class UploadPDFView(View):
                         persona=persona,
                         tipo_documento=result['tipo_documento'],
                         archivo_original=result['archivo_original'],
-                        archivo_pagina=result['archivo_pagina'],
                         pagina_numero=result['pagina_numero'],
                         texto_extraido=result['texto_extraido'],
                         estado='clasificado' if result['tipo_documento'] else 'pendiente',
@@ -74,10 +73,10 @@ class UploadBatchPDFView(View):
                 filename = pdf_file.name
                 codigo = filename.replace('.pdf', '').replace('.PDF', '').strip()
 
-                if not re.match(r'^\d{8,9}$', codigo):
+                if not re.match(r'^\d{5,}$', codigo):
                     errores.append({
                         'archivo': filename,
-                        'error': 'Nombre de archivo inválido. Se esperaba un código de 8-9 dígitos (ej: 12345678.pdf)',
+                        'error': 'Nombre de archivo inválido. Se esperaba un código de 5 o más dígitos (ej: 12345678.pdf)',
                     })
                     continue
 
@@ -98,7 +97,6 @@ class UploadBatchPDFView(View):
                             persona=persona,
                             tipo_documento=result['tipo_documento'],
                             archivo_original=result['archivo_original'],
-                            archivo_pagina=result['archivo_pagina'],
                             pagina_numero=result['pagina_numero'],
                             texto_extraido=result['texto_extraido'],
                             estado='clasificado' if result['tipo_documento'] else 'pendiente',
@@ -139,9 +137,23 @@ class DocumentoFileView(View):
             raise Http404
 
         storage = MinIOService()
-        pdf_bytes = storage.get_file(doc.archivo_pagina)
+        pdf_bytes = storage.get_file(doc.archivo_original)
 
-        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page_index = doc.pagina_numero - 1
+
+        if page_index < 0 or page_index >= len(pdf_doc):
+            pdf_doc.close()
+            raise Http404
+
+        pdf_page = fitz.open()
+        pdf_page.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+        page_bytes = pdf_page.tobytes()
+
+        pdf_page.close()
+        pdf_doc.close()
+
+        response = HttpResponse(page_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'inline; filename="pagina_{doc.pagina_numero}.pdf"'
         response['X-Frame-Options'] = 'SAMEORIGIN'
         return response
@@ -170,10 +182,16 @@ class DocumentoThumbnailView(View):
             raise Http404
 
         storage = MinIOService()
-        pdf_bytes = storage.get_file(doc.archivo_pagina)
+        pdf_bytes = storage.get_file(doc.archivo_original)
 
         pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        page = pdf_doc.load_page(0)
+        page_index = doc.pagina_numero - 1
+
+        if page_index < 0 or page_index >= len(pdf_doc):
+            pdf_doc.close()
+            raise Http404
+
+        page = pdf_doc.load_page(page_index)
 
         mat = fitz.Matrix(0.5, 0.5)
         pix = page.get_pixmap(matrix=mat)
