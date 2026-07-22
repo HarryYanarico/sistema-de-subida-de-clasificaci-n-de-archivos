@@ -1,3 +1,11 @@
+export interface Unidad {
+  id: number;
+  nombre: string;
+  slug: string;
+  descripcion: string;
+  activo: boolean;
+}
+
 export interface Persona {
   id: number;
   codigo: string;

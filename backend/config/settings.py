@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'graphene_django',
     'apps.users',
+    'apps.unidades',
     'apps.personas',
     'apps.documentos',
 ]

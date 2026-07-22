@@ -31,13 +31,13 @@ class DocumentoByPersona(graphene.ObjectType):
 
 
 class Query(graphene.ObjectType):
-    tipos_documento = graphene.List(TipoDocumentoType, activo=graphene.Boolean())
+    tipos_documento = graphene.List(TipoDocumentoType, unidad_id=graphene.Int(required=True), activo=graphene.Boolean())
     tipo_documento = graphene.Field(TipoDocumentoType, id=graphene.Int(required=True))
     documentos_persona = graphene.Field(DocumentoByPersona, persona_id=graphene.Int(required=True))
-    documentos_pendientes = graphene.List(DocumentoType)
+    documentos_pendientes = graphene.List(DocumentoType, unidad_id=graphene.Int(required=True))
 
-    def resolve_tipos_documento(self, info, activo=None):
-        qs = TipoDocumento.objects.all()
+    def resolve_tipos_documento(self, info, unidad_id, activo=None):
+        qs = TipoDocumento.objects.filter(unidad_id=unidad_id)
         if activo is not None:
             qs = qs.filter(activo=activo)
         return qs
@@ -57,5 +57,9 @@ class Query(graphene.ObjectType):
             pendientes=total - clasificados,
         )
 
-    def resolve_documentos_pendientes(self, info):
-        return Documento.objects.filter(estado='pendiente', tipo_documento__isnull=True)
+    def resolve_documentos_pendientes(self, info, unidad_id):
+        return Documento.objects.filter(
+            estado='pendiente',
+            tipo_documento__isnull=True,
+            persona__unidad_id=unidad_id,
+        )

@@ -37,14 +37,15 @@ class PersonaConnection(graphene.ObjectType):
 class Query(graphene.ObjectType):
     personas = graphene.Field(
         PersonaConnection,
+        unidad_id=graphene.Int(required=True),
         search=graphene.String(),
         page=graphene.Int(default_value=1),
         limit=graphene.Int(default_value=10),
     )
     persona = graphene.Field(PersonaType, id=graphene.Int(required=True))
 
-    def resolve_personas(self, info, search=None, page=1, limit=10):
-        queryset = Persona.objects.all()
+    def resolve_personas(self, info, unidad_id, search=None, page=1, limit=10):
+        queryset = Persona.objects.filter(unidad_id=unidad_id)
         if search:
             queryset = queryset.filter(
                 Q(nombres__icontains=search) |

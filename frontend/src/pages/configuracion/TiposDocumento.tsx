@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { KeywordInput } from '@/components/ui/keyword-input'
 import { Plus, Trash2, Pencil } from 'lucide-react'
+import { useUnidad } from '@/contexts/UnidadContext'
 
 interface TipoForm {
   nombre: string
@@ -37,8 +38,12 @@ export function TiposDocumento() {
   const [editOpen, setEditOpen] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState<TipoForm>(emptyForm)
+  const { unidadActiva } = useUnidad()
 
-  const { data, loading, refetch } = useQuery(GET_TIPOS_DOCUMENTO)
+  const { data, loading, refetch } = useQuery(GET_TIPOS_DOCUMENTO, {
+    variables: { unidadId: unidadActiva?.id || 0, activo: true },
+    skip: !unidadActiva,
+  })
   const [createTipo] = useMutation(CREATE_TIPO_DOCUMENTO)
   const [updateTipo] = useMutation(UPDATE_TIPO_DOCUMENTO)
   const [deleteTipo] = useMutation(DELETE_TIPO_DOCUMENTO)
@@ -47,9 +52,11 @@ export function TiposDocumento() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!unidadActiva) return
     try {
       const { data } = await createTipo({
         variables: {
+          unidadId: unidadActiva.id,
           nombre: form.nombre,
           palabrasClave: form.palabrasClave.join(', '),
           requiere: form.requiere,

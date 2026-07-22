@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Upload, FileText, X, CheckCircle, AlertCircle, CloudUpload } from 'lucide-react'
+import { useUnidad } from '@/contexts/UnidadContext'
 
 interface DetalleArchivo {
   archivo: string
@@ -41,6 +42,7 @@ export function SubirDocumentos() {
   const [resultado, setResultado] = useState<ResultadoBatch | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { unidadActiva } = useUnidad()
 
   const addFiles = (newFiles: FileList | File[]) => {
     const pdfFiles = Array.from(newFiles).filter(
@@ -88,12 +90,14 @@ export function SubirDocumentos() {
 
   const handleUpload = async () => {
     if (files.length === 0) return
+    if (!unidadActiva) return
 
     setUploading(true)
     setResultado(null)
 
     try {
       const formData = new FormData()
+      formData.append('unidad_id', unidadActiva.id.toString())
       files.forEach((file) => {
         formData.append('pdfs', file)
       })
@@ -295,7 +299,7 @@ export function SubirDocumentos() {
       <div className="flex justify-end">
         <Button
           onClick={handleUpload}
-          disabled={files.length === 0 || uploading}
+          disabled={files.length === 0 || uploading || !unidadActiva}
           size="lg"
         >
           {uploading ? (

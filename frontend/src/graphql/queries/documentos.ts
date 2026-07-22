@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client';
 
 export const GET_TIPOS_DOCUMENTO = gql`
-  query GetTiposDocumento($activo: Boolean) {
-    tiposDocumento(activo: $activo) {
+  query GetTiposDocumento($unidadId: Int!, $activo: Boolean) {
+    tiposDocumento(unidadId: $unidadId, activo: $activo) {
       id
       nombre
       slug
@@ -42,8 +42,8 @@ export const GET_DOCUMENTOS_PERSONA = gql`
 `;
 
 export const GET_DOCUMENTOS_PENDIENTES = gql`
-  query GetDocumentosPendientes {
-    documentosPendientes {
+  query GetDocumentosPendientes($unidadId: Int!) {
+    documentosPendientes(unidadId: $unidadId) {
       id
       persona {
         id

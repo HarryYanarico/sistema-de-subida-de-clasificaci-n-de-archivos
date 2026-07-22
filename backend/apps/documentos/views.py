@@ -7,6 +7,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from apps.personas.models import Persona
 from apps.documentos.models import Documento
+from apps.unidades.models import Unidad
 from apps.storage.pdf_processor import PDFProcessor
 from apps.storage.services import MinIOService
 
@@ -32,7 +33,7 @@ class UploadPDFView(View):
 
             for pdf_file in files:
                 file_content = pdf_file.read()
-                results = processor.process_pdf(persona.codigo, pdf_file.name, file_content)
+                results = processor.process_pdf(persona.codigo, pdf_file.name, file_content, unidad=persona.unidad)
 
                 for result in results:
                     Documento.objects.create(
@@ -59,6 +60,14 @@ class UploadPDFView(View):
 class UploadBatchPDFView(View):
     def post(self, request):
         try:
+            unidad_id = request.POST.get('unidad_id')
+            if not unidad_id:
+                return JsonResponse({'success': False, 'message': 'unidad_id es requerido'}, status=400)
+
+            unidad = Unidad.objects.filter(id=unidad_id).first()
+            if not unidad:
+                return JsonResponse({'success': False, 'message': 'Unidad no encontrada'}, status=404)
+
             files = request.FILES.getlist('pdfs')
             if not files:
                 return JsonResponse({'success': False, 'message': 'No se enviaron archivos'}, status=400)
@@ -80,17 +89,17 @@ class UploadBatchPDFView(View):
                     })
                     continue
 
-                persona = Persona.objects.filter(codigo=codigo).first()
+                persona = Persona.objects.filter(codigo=codigo, unidad=unidad).first()
                 if not persona:
                     errores.append({
                         'archivo': filename,
-                        'error': f'No se encontró persona con código {codigo}',
+                        'error': f'No se encontró persona con código {codigo} en esta unidad',
                     })
                     continue
 
                 try:
                     file_content = pdf_file.read()
-                    results = processor.process_pdf(persona.codigo, filename, file_content)
+                    results = processor.process_pdf(persona.codigo, filename, file_content, unidad=unidad)
 
                     for result in results:
                         Documento.objects.create(

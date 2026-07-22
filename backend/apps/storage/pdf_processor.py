@@ -16,7 +16,7 @@ class PDFProcessor:
             self._ai_classifier = GeminiClassifier()
         return self._ai_classifier
 
-    def process_pdf(self, persona_codigo: str, filename: str, file_content: bytes) -> list[dict]:
+    def process_pdf(self, persona_codigo: str, filename: str, file_content: bytes, unidad=None) -> list[dict]:
         from apps.personas.models import Persona
 
         persona = Persona.objects.filter(codigo=persona_codigo).first()
@@ -31,11 +31,11 @@ class PDFProcessor:
             tipo_documento = None
 
             if not self._is_blank(text):
-                tipo_documento, score = self._classify_local(text)
+                tipo_documento, score = self._classify_local(text, unidad=unidad)
 
                 if tipo_documento is None:
                     sanitized = self._sanitize_text_for_ai(text, persona)
-                    tipo_documento = self._classify_with_ai(sanitized)
+                    tipo_documento = self._classify_with_ai(sanitized, unidad=unidad)
 
             results.append({
                 'pagina_numero': page_num + 1,
@@ -53,10 +53,12 @@ class PDFProcessor:
         clean = re.sub(r'\s+', '', text)
         return len(clean) < 10
 
-    def _classify_local(self, text: str) -> tuple:
+    def _classify_local(self, text: str, unidad=None) -> tuple:
         from apps.documentos.models import TipoDocumento
 
         tipos = TipoDocumento.objects.filter(activo=True)
+        if unidad:
+            tipos = tipos.filter(unidad=unidad)
         texto_lower = text.lower()
         mejor_tipo = None
         max_score = 0
@@ -119,15 +121,18 @@ class PDFProcessor:
 
         return sanitized
 
-    def _classify_with_ai(self, sanitized_text: str):
+    def _classify_with_ai(self, sanitized_text: str, unidad=None):
         from apps.documentos.models import TipoDocumento
 
         if not self.ai_classifier.is_available:
             return None
 
+        tipos_qs = TipoDocumento.objects.filter(activo=True)
+        if unidad:
+            tipos_qs = tipos_qs.filter(unidad=unidad)
+
         tipos = list(
-            TipoDocumento.objects.filter(activo=True)
-            .values('nombre', 'slug')
+            tipos_qs.values('nombre', 'slug')
         )
 
         if not tipos:
