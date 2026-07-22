@@ -3,8 +3,12 @@ from apps.personas.models import Persona
 
 
 class TipoDocumento(models.Model):
+    unidad = models.ForeignKey(
+        'unidades.Unidad', on_delete=models.CASCADE,
+        related_name='tipos_documento', null=True, blank=True
+    )
     nombre = models.CharField(max_length=255)
-    slug = models.SlugField(max_length=255, unique=True)
+    slug = models.SlugField(max_length=255)
     palabras_clave = models.TextField(
         help_text="Formato: palabra:peso,palabra:peso (peso 1-5, default 1)"
     )
@@ -31,6 +35,7 @@ class TipoDocumento(models.Model):
         ordering = ['orden', 'nombre']
         verbose_name = 'tipo de documento'
         verbose_name_plural = 'tipos de documento'
+        unique_together = ('slug', 'unidad')
 
     def __str__(self):
         return self.nombre

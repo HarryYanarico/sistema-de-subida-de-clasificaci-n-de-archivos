@@ -7,6 +7,7 @@ import { ListaPersonas } from './pages/personas/ListaPersonas'
 import { RegistrarPersona } from './pages/personas/RegistrarPersona'
 import { CasilleroDocumentos } from './pages/personas/CasilleroDocumentos'
 import { TiposDocumento } from './pages/configuracion/TiposDocumento'
+import { Unidades } from './pages/configuracion/Unidades'
 import { SubirDocumentos } from './pages/documentos/SubirDocumentos'
 import { DocumentosPendientes } from './pages/documentos/DocumentosPendientes'
 
@@ -45,6 +46,7 @@ function App() {
         <Route path="/documentos/subir" element={<SubirDocumentos />} />
         <Route path="/documentos/pendientes" element={<DocumentosPendientes />} />
         <Route path="/configuracion/tipos-documento" element={<TiposDocumento />} />
+        <Route path="/configuracion/unidades" element={<Unidades />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

@@ -7,10 +7,13 @@ import {
   Menu,
   X,
   FileText,
-  AlertCircle
+  AlertCircle,
+  Building2
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useUnidad } from '@/contexts/UnidadContext'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -22,12 +25,14 @@ const navigation = [
   { name: 'Personas', href: '/personas', icon: Users },
   { name: 'Subir Documentos', href: '/documentos/subir', icon: Upload },
   { name: 'Documentos Pendientes', href: '/documentos/pendientes', icon: AlertCircle },
+  { name: 'Unidades', href: '/configuracion/unidades', icon: Building2 },
   { name: 'Tipos de Documento', href: '/configuracion/tipos-documento', icon: FileText },
 ]
 
 export function Layout({ children, onLogout }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
+  const { unidadActiva, setUnidadActiva, unidades, loading: unidadesLoading } = useUnidad()
 
   return (
     <div className="min-h-screen bg-background">
@@ -115,9 +120,26 @@ export function Layout({ children, onLogout }: LayoutProps) {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
-          <div className="text-sm text-muted-foreground">
-            Sistema de Digitalización
-          </div>
+          {unidades.length > 0 && (
+            <Select
+              value={unidadActiva?.id?.toString() || ''}
+              onValueChange={(value) => {
+                const found = unidades.find((u) => u.id.toString() === value)
+                if (found) setUnidadActiva(found)
+              }}
+            >
+              <SelectTrigger className="w-[280px]" disabled={unidadesLoading}>
+                <SelectValue placeholder="Seleccionar unidad" />
+              </SelectTrigger>
+              <SelectContent>
+                {unidades.map((u) => (
+                  <SelectItem key={u.id} value={u.id.toString()}>
+                    {u.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <main className="p-4 lg:p-8">
           {children}

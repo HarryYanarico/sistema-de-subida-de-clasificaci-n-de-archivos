@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client';
 
 export const GET_PERSONAS = gql`
-  query GetPersonas($search: String, $page: Int, $limit: Int) {
-    personas(search: $search, page: $page, limit: $limit) {
+  query GetPersonas($unidadId: Int!, $search: String, $page: Int, $limit: Int) {
+    personas(unidadId: $unidadId, search: $search, page: $page, limit: $limit) {
       items {
         id
         codigo

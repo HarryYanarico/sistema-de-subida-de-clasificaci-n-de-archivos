@@ -2,7 +2,11 @@ from django.db import models
 
 
 class Persona(models.Model):
-    codigo = models.CharField(max_length=20, unique=True, verbose_name='Código')
+    unidad = models.ForeignKey(
+        'unidades.Unidad', on_delete=models.CASCADE,
+        related_name='personas', null=True, blank=True
+    )
+    codigo = models.CharField(max_length=20, verbose_name='Código')
     nombres = models.CharField(max_length=255)
     apellidos = models.CharField(max_length=255)
     ci = models.CharField(max_length=20, blank=True, verbose_name='Carnet de Identidad')
@@ -16,6 +20,7 @@ class Persona(models.Model):
         ordering = ['codigo']
         verbose_name = 'persona'
         verbose_name_plural = 'personas'
+        unique_together = ('codigo', 'unidad')
 
     def __str__(self):
         return f"{self.codigo} - {self.nombres} {self.apellidos}"

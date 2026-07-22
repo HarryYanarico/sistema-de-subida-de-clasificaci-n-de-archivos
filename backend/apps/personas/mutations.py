@@ -5,6 +5,7 @@ from .schema import PersonaType
 
 class CreatePersona(graphene.Mutation):
     class Arguments:
+        unidad_id = graphene.Int(required=True)
         codigo = graphene.String(required=True)
         nombres = graphene.String(required=True)
         apellidos = graphene.String(required=True)
@@ -16,11 +17,16 @@ class CreatePersona(graphene.Mutation):
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, codigo, nombres, apellidos, ci='', email=None, telefono=''):
+    def mutate(self, info, unidad_id, codigo, nombres, apellidos, ci='', email=None, telefono=''):
         try:
-            if Persona.objects.filter(codigo=codigo).exists():
-                return CreatePersona(persona=None, success=False, message="Ya existe una persona con ese código")
+            from apps.unidades.models import Unidad
+            unidad = Unidad.objects.filter(id=unidad_id).first()
+            if not unidad:
+                return CreatePersona(persona=None, success=False, message="Unidad no encontrada")
+            if Persona.objects.filter(codigo=codigo, unidad=unidad).exists():
+                return CreatePersona(persona=None, success=False, message="Ya existe una persona con ese código en esta unidad")
             persona = Persona.objects.create(
+                unidad=unidad,
                 codigo=codigo,
                 nombres=nombres,
                 apellidos=apellidos,
@@ -53,8 +59,8 @@ class UpdatePersona(graphene.Mutation):
             if not persona:
                 return UpdatePersona(persona=None, success=False, message="Persona no encontrada")
             if codigo is not None:
-                if Persona.objects.filter(codigo=codigo).exclude(id=id).exists():
-                    return UpdatePersona(persona=None, success=False, message="Ya existe otra persona con ese código")
+                if Persona.objects.filter(codigo=codigo, unidad=persona.unidad).exclude(id=id).exists():
+                    return UpdatePersona(persona=None, success=False, message="Ya existe otra persona con ese código en esta unidad")
                 persona.codigo = codigo
             if nombres is not None:
                 persona.nombres = nombres

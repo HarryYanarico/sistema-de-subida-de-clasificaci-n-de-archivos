@@ -2,6 +2,7 @@ import { gql } from '@apollo/client';
 
 export const CREATE_TIPO_DOCUMENTO = gql`
   mutation CreateTipoDocumento(
+    $unidadId: Int!
     $nombre: String!
     $palabrasClave: String!
     $requiere: String
@@ -11,6 +12,7 @@ export const CREATE_TIPO_DOCUMENTO = gql`
     $orden: Int
   ) {
     createTipoDocumento(
+      unidadId: $unidadId
       nombre: $nombre
       palabrasClave: $palabrasClave
       requiere: $requiere

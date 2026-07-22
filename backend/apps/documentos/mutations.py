@@ -5,11 +5,12 @@ from .schema import TipoDocumentoType, DocumentoType
 
 
 def clasificar_documento(doc):
+    unidad = doc.persona.unidad
     texto_lower = doc.texto_extraido.lower()
     mejor_tipo = None
     max_score = 0
 
-    for tipo in TipoDocumento.objects.filter(activo=True):
+    for tipo in TipoDocumento.objects.filter(unidad=unidad, activo=True):
         if tipo.lista_requiere:
             tiene_requerida = False
             for palabra in tipo.lista_requiere:
@@ -46,14 +47,17 @@ def clasificar_documento(doc):
     doc.save()
 
 
-def reclasificar_todos():
-    docs = Documento.objects.exclude(texto_extraido='')
-    for doc in docs:
+def reclasificar_todos(unidad=None):
+    qs = Documento.objects.exclude(texto_extraido='')
+    if unidad:
+        qs = qs.filter(persona__unidad=unidad)
+    for doc in qs:
         clasificar_documento(doc)
 
 
 class CreateTipoDocumento(graphene.Mutation):
     class Arguments:
+        unidad_id = graphene.Int(required=True)
         nombre = graphene.String(required=True)
         palabras_clave = graphene.String(required=True)
         requiere = graphene.String()
@@ -66,13 +70,18 @@ class CreateTipoDocumento(graphene.Mutation):
     success = graphene.Boolean()
     message = graphene.String()
 
-    def mutate(self, info, nombre, palabras_clave, requiere='', excluye='',
+    def mutate(self, info, unidad_id, nombre, palabras_clave, requiere='', excluye='',
                score_minimo=3, es_obligatorio=False, orden=0):
         try:
+            from apps.unidades.models import Unidad
+            unidad = Unidad.objects.filter(id=unidad_id).first()
+            if not unidad:
+                return CreateTipoDocumento(tipo_documento=None, success=False, message="Unidad no encontrada")
             slug = re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
-            if TipoDocumento.objects.filter(slug=slug).exists():
-                return CreateTipoDocumento(tipo_documento=None, success=False, message="Ya existe un tipo con ese nombre")
+            if TipoDocumento.objects.filter(slug=slug, unidad=unidad).exists():
+                return CreateTipoDocumento(tipo_documento=None, success=False, message="Ya existe un tipo con ese nombre en esta unidad")
             tipo = TipoDocumento.objects.create(
+                unidad=unidad,
                 nombre=nombre,
                 slug=slug,
                 palabras_clave=palabras_clave,
@@ -82,7 +91,7 @@ class CreateTipoDocumento(graphene.Mutation):
                 es_obligatorio=es_obligatorio,
                 orden=orden,
             )
-            reclasificar_todos()
+            reclasificar_todos(unidad=unidad)
             return CreateTipoDocumento(tipo_documento=tipo, success=True, message="Tipo de documento creado")
         except Exception as e:
             return CreateTipoDocumento(tipo_documento=None, success=False, message=str(e))
@@ -127,7 +136,7 @@ class UpdateTipoDocumento(graphene.Mutation):
             if activo is not None:
                 tipo.activo = activo
             tipo.save()
-            reclasificar_todos()
+            reclasificar_todos(unidad=tipo.unidad)
             return UpdateTipoDocumento(tipo_documento=tipo, success=True, message="Tipo actualizado")
         except Exception as e:
             return UpdateTipoDocumento(tipo_documento=None, success=False, message=str(e))
