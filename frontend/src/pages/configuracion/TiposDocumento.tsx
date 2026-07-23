@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { GET_TIPOS_DOCUMENTO } from '@/graphql/queries/documentos'
 import { CREATE_TIPO_DOCUMENTO, UPDATE_TIPO_DOCUMENTO, DELETE_TIPO_DOCUMENTO } from '@/graphql/mutations/documentos'
@@ -41,9 +41,14 @@ export function TiposDocumento() {
   const { unidadActiva } = useUnidad()
 
   const { data, loading, refetch } = useQuery(GET_TIPOS_DOCUMENTO, {
-    variables: { unidadId: unidadActiva?.id || 0, activo: true },
+    variables: { unidadId: Number(unidadActiva?.id) || 0, activo: true },
     skip: !unidadActiva,
   })
+
+  useEffect(() => {
+    if (unidadActiva) refetch()
+  }, [unidadActiva?.id])
+
   const [createTipo] = useMutation(CREATE_TIPO_DOCUMENTO)
   const [updateTipo] = useMutation(UPDATE_TIPO_DOCUMENTO)
   const [deleteTipo] = useMutation(DELETE_TIPO_DOCUMENTO)
@@ -56,7 +61,7 @@ export function TiposDocumento() {
     try {
       const { data } = await createTipo({
         variables: {
-          unidadId: unidadActiva.id,
+          unidadId: Number(unidadActiva.id),
           nombre: form.nombre,
           palabrasClave: form.palabrasClave.join(', '),
           requiere: form.requiere,

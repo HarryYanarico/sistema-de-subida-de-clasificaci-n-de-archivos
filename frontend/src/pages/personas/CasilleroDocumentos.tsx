@@ -13,12 +13,14 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { ArrowLeft, FileText, AlertCircle, User, Printer, Calendar, Mail, Phone, CreditCard } from 'lucide-react'
+import { useUnidad } from '@/contexts/UnidadContext'
 
 export function CasilleroDocumentos() {
   const { id } = useParams<{ id: string }>()
   const [asignarDocumento] = useMutation(ASIGNAR_DOCUMENTO)
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
   const [showDialog, setShowDialog] = useState(false)
+  const { unidadActiva } = useUnidad()
 
   const { data: personaData, loading: loadingPersona } = useQuery(GET_PERSONA, {
     variables: { id: parseInt(id || '0') },
@@ -29,7 +31,8 @@ export function CasilleroDocumentos() {
   })
 
   const { data: tiposData } = useQuery(GET_TIPOS_DOCUMENTO, {
-    variables: { activo: true },
+    variables: { unidadId: Number(unidadActiva?.id) || 0, activo: true },
+    skip: !unidadActiva,
   })
 
   const persona = personaData?.persona

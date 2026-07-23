@@ -18,7 +18,7 @@ export function ListaPersonas() {
   const { unidadActiva } = useUnidad()
 
   const { data, loading } = useQuery(GET_PERSONAS, {
-    variables: { unidadId: unidadActiva?.id || 0, search, page, limit },
+    variables: { unidadId: Number(unidadActiva?.id) || 0, search, page, limit },
     skip: !unidadActiva,
   })
 
