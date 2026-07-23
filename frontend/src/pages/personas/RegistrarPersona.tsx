@@ -40,7 +40,7 @@ export function RegistrarPersona() {
     try {
       const { data } = await createPersona({
         variables: {
-          unidadId: unidadActiva.id,
+          unidadId: Number(unidadActiva.id),
           codigo: form.codigo,
           nombres: form.nombres,
           apellidos: form.apellidos,

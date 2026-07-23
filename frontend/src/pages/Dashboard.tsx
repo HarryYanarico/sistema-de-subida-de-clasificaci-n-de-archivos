@@ -9,7 +9,7 @@ import { useUnidad } from '@/contexts/UnidadContext'
 export function Dashboard() {
   const { unidadActiva } = useUnidad()
   const { data } = useQuery(GET_PERSONAS, {
-    variables: { unidadId: unidadActiva?.id || 0, page: 1, limit: 10 },
+    variables: { unidadId: Number(unidadActiva?.id) || 0, page: 1, limit: 10 },
     skip: !unidadActiva,
   })
 

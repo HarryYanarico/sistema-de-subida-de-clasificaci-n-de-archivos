@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Layout } from './components/layout/Layout'
 import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
@@ -12,15 +12,9 @@ import { SubirDocumentos } from './pages/documentos/SubirDocumentos'
 import { DocumentosPendientes } from './pages/documentos/DocumentosPendientes'
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-    }
-  }, [])
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('token')
+  })
 
   const handleLogin = () => {
     setIsAuthenticated(true)

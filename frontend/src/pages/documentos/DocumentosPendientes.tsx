@@ -20,11 +20,11 @@ export function DocumentosPendientes() {
   const { unidadActiva } = useUnidad()
 
   const { data, loading, refetch } = useQuery(GET_DOCUMENTOS_PENDIENTES, {
-    variables: { unidadId: unidadActiva?.id || 0 },
+    variables: { unidadId: Number(unidadActiva?.id) || 0 },
     skip: !unidadActiva,
   })
   const { data: tiposData } = useQuery(GET_TIPOS_DOCUMENTO, {
-    variables: { unidadId: unidadActiva?.id || 0, activo: true },
+    variables: { unidadId: Number(unidadActiva?.id) || 0, activo: true },
     skip: !unidadActiva,
   })
 
