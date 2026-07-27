@@ -5,34 +5,20 @@ from apps.personas.models import Persona
 class TipoDocumento(models.Model):
     unidad = models.ForeignKey(
         'unidades.Unidad', on_delete=models.CASCADE,
-        related_name='tipos_documento', null=True, blank=True
+        related_name='tipos_documento'
     )
     nombre = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255)
     palabras_clave = models.TextField(
         help_text="Formato: palabra:peso,palabra:peso (peso 1-5, default 1)"
     )
-    requiere = models.TextField(
-        blank=True, default='',
-        help_text="Palabras que DEBEN estar presentes para clasificar (separadas por coma)"
-    )
-    excluye = models.TextField(
-        blank=True, default='',
-        help_text="Slugs de tipos que se excluyen mutuamente (separados por coma)"
-    )
-    score_minimo = models.IntegerField(
-        default=3,
-        help_text="Score mínimo ponderado para clasificar localmente"
-    )
-    es_obligatorio = models.BooleanField(default=False)
-    orden = models.IntegerField(default=0)
     activo = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'tipos_documento'
-        ordering = ['orden', 'nombre']
+        ordering = ['nombre']
         verbose_name = 'tipo de documento'
         verbose_name_plural = 'tipos de documento'
         unique_together = ('slug', 'unidad')
@@ -64,13 +50,6 @@ class TipoDocumento(models.Model):
             resultado.append((palabra, max(1, min(5, peso))))
         return resultado
 
-    @property
-    def lista_requiere(self):
-        return [r.strip().lower() for r in self.requiere.split(',') if r.strip()]
-
-    @property
-    def lista_excluye(self):
-        return [e.strip() for e in self.excluye.split(',') if e.strip()]
 
 
 class Documento(models.Model):

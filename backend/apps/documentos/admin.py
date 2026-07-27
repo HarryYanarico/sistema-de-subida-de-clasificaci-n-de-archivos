@@ -4,8 +4,8 @@ from .models import TipoDocumento, Documento
 
 @admin.register(TipoDocumento)
 class TipoDocumentoAdmin(admin.ModelAdmin):
-    list_display = ('nombre', 'slug', 'es_obligatorio', 'orden', 'activo')
-    list_filter = ('es_obligatorio', 'activo')
+    list_display = ('nombre', 'slug', 'activo')
+    list_filter = ('activo',)
     search_fields = ('nombre',)
 
 
