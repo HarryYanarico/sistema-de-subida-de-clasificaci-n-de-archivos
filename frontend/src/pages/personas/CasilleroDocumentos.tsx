@@ -229,9 +229,6 @@ export function CasilleroDocumentos() {
                   <div className="p-3 border-t">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium truncate">{tipo.nombre}</span>
-                      {tipo.esObligatorio && (
-                        <Badge variant="destructive" className="text-xs ml-1 flex-shrink-0">Req.</Badge>
-                      )}
                     </div>
                     {hasDoc ? (
                       <div className="flex items-center gap-2">

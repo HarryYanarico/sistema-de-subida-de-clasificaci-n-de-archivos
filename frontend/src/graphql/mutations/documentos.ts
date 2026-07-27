@@ -5,32 +5,17 @@ export const CREATE_TIPO_DOCUMENTO = gql`
     $unidadId: Int!
     $nombre: String!
     $palabrasClave: String!
-    $requiere: String
-    $excluye: String
-    $scoreMinimo: Int
-    $esObligatorio: Boolean
-    $orden: Int
   ) {
     createTipoDocumento(
       unidadId: $unidadId
       nombre: $nombre
       palabrasClave: $palabrasClave
-      requiere: $requiere
-      excluye: $excluye
-      scoreMinimo: $scoreMinimo
-      esObligatorio: $esObligatorio
-      orden: $orden
     ) {
       tipoDocumento {
         id
         nombre
         slug
         palabrasClave
-        requiere
-        excluye
-        scoreMinimo
-        esObligatorio
-        orden
       }
       success
       message
@@ -43,22 +28,12 @@ export const UPDATE_TIPO_DOCUMENTO = gql`
     $id: Int!
     $nombre: String
     $palabrasClave: String
-    $requiere: String
-    $excluye: String
-    $scoreMinimo: Int
-    $esObligatorio: Boolean
-    $orden: Int
     $activo: Boolean
   ) {
     updateTipoDocumento(
       id: $id
       nombre: $nombre
       palabrasClave: $palabrasClave
-      requiere: $requiere
-      excluye: $excluye
-      scoreMinimo: $scoreMinimo
-      esObligatorio: $esObligatorio
-      orden: $orden
       activo: $activo
     ) {
       tipoDocumento {
@@ -66,11 +41,6 @@ export const UPDATE_TIPO_DOCUMENTO = gql`
         nombre
         slug
         palabrasClave
-        requiere
-        excluye
-        scoreMinimo
-        esObligatorio
-        orden
         activo
       }
       success

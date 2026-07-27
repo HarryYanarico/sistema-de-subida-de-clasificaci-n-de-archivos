@@ -64,30 +64,12 @@ class PDFProcessor:
         max_score = 0
 
         for tipo in tipos:
-            if tipo.lista_requiere:
-                tiene_requerida = False
-                for palabra in tipo.lista_requiere:
-                    if palabra in texto_lower:
-                        tiene_requerida = True
-                        break
-                if not tiene_requerida:
-                    continue
-
-            if tipo.lista_excluye:
-                excluido = False
-                for slug in tipo.lista_excluye:
-                    if slug in texto_lower:
-                        excluido = True
-                        break
-                if excluido:
-                    continue
-
             score = 0
             for palabra, peso in tipo.lista_palabras_clave_con_pesos:
                 if palabra in texto_lower:
                     score += peso
 
-            if score >= tipo.score_minimo and score > max_score:
+            if score > max_score:
                 max_score = score
                 mejor_tipo = tipo
 

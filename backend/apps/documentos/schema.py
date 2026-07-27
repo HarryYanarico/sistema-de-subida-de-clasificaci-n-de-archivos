@@ -6,8 +6,7 @@ from .models import TipoDocumento, Documento
 class TipoDocumentoType(DjangoObjectType):
     class Meta:
         model = TipoDocumento
-        fields = ('id', 'nombre', 'slug', 'palabras_clave', 'requiere', 'excluye',
-                  'score_minimo', 'es_obligatorio', 'orden', 'activo', 'created_at')
+        fields = ('id', 'nombre', 'slug', 'palabras_clave', 'activo', 'created_at')
 
 
 class DocumentoType(DjangoObjectType):

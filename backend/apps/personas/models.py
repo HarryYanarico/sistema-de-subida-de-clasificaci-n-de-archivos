@@ -4,7 +4,7 @@ from django.db import models
 class Persona(models.Model):
     unidad = models.ForeignKey(
         'unidades.Unidad', on_delete=models.CASCADE,
-        related_name='personas', null=True, blank=True
+        related_name='personas'
     )
     codigo = models.CharField(max_length=20, verbose_name='Código')
     nombres = models.CharField(max_length=255)

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { KeywordInput } from '@/components/ui/keyword-input'
 import { Plus, Trash2, Pencil } from 'lucide-react'
 import { useUnidad } from '@/contexts/UnidadContext'
@@ -16,27 +16,23 @@ import { useUnidad } from '@/contexts/UnidadContext'
 interface TipoForm {
   nombre: string
   palabrasClave: string[]
-  requiere: string
-  excluye: string
-  scoreMinimo: number
-  esObligatorio: boolean
-  orden: number
 }
 
 const emptyForm: TipoForm = {
   nombre: '',
   palabrasClave: [],
-  requiere: '',
-  excluye: '',
-  scoreMinimo: 3,
-  esObligatorio: false,
-  orden: 0,
+}
+
+function autoAssignWeight(keywords: string[]): string[] {
+  return keywords.map(k => {
+    if (k.includes(':')) return k
+    return `${k}:3`
+  })
 }
 
 export function TiposDocumento() {
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-  const [editId, setEditId] = useState<number | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<TipoForm>(emptyForm)
   const { unidadActiva } = useUnidad()
 
@@ -55,74 +51,57 @@ export function TiposDocumento() {
 
   const tipos = data?.tiposDocumento || []
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!unidadActiva) return
-    try {
-      const { data } = await createTipo({
-        variables: {
-          unidadId: Number(unidadActiva.id),
-          nombre: form.nombre,
-          palabrasClave: form.palabrasClave.join(', '),
-          requiere: form.requiere,
-          excluye: form.excluye,
-          scoreMinimo: form.scoreMinimo,
-          esObligatorio: form.esObligatorio,
-          orden: form.orden,
-        },
-      })
-      if (!data?.createTipoDocumento?.success) {
-        alert(data?.createTipoDocumento?.message || 'Error al crear')
-        return
-      }
-      setForm(emptyForm)
-      setCreateOpen(false)
-      refetch()
-    } catch (err: any) {
-      alert('Error al crear tipo de documento: ' + (err.message || err))
-    }
+  const openCreate = () => {
+    setEditingId(null)
+    setForm(emptyForm)
+    setDialogOpen(true)
   }
 
   const openEdit = (tipo: any) => {
-    setEditId(tipo.id)
+    setEditingId(tipo.id)
     setForm({
       nombre: tipo.nombre,
-      palabrasClave: tipo.palabrasClave ? tipo.palabrasClave.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-      requiere: tipo.requiere || '',
-      excluye: tipo.excluye || '',
-      scoreMinimo: tipo.scoreMinimo || 3,
-      esObligatorio: tipo.esObligatorio,
-      orden: tipo.orden,
+      palabrasClave: tipo.palabrasClave
+        ? tipo.palabrasClave.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : [],
     })
-    setEditOpen(true)
+    setDialogOpen(true)
   }
 
-  const handleEdit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editId) return
+    if (!unidadActiva) return
+
+    const keywordsWithWeight = autoAssignWeight(form.palabrasClave)
+    const payload = {
+      nombre: form.nombre,
+      palabrasClave: keywordsWithWeight.join(', '),
+    }
+
     try {
-      const { data } = await updateTipo({
-        variables: {
-          id: Number(editId),
-          nombre: form.nombre,
-          palabrasClave: form.palabrasClave.join(', '),
-          requiere: form.requiere,
-          excluye: form.excluye,
-          scoreMinimo: form.scoreMinimo,
-          esObligatorio: form.esObligatorio,
-          orden: form.orden,
-        },
-      })
-      if (!data?.updateTipoDocumento?.success) {
-        alert(data?.updateTipoDocumento?.message || 'Error al guardar')
-        return
+      if (editingId) {
+        const { data } = await updateTipo({
+          variables: { id: Number(editingId), ...payload },
+        })
+        if (!data?.updateTipoDocumento?.success) {
+          alert(data?.updateTipoDocumento?.message || 'Error al guardar')
+          return
+        }
+      } else {
+        const { data } = await createTipo({
+          variables: { unidadId: Number(unidadActiva.id), ...payload },
+        })
+        if (!data?.createTipoDocumento?.success) {
+          alert(data?.createTipoDocumento?.message || 'Error al crear')
+          return
+        }
       }
       setForm(emptyForm)
-      setEditId(null)
-      setEditOpen(false)
+      setEditingId(null)
+      setDialogOpen(false)
       refetch()
     } catch (err: any) {
-      alert('Error al guardar tipo de documento: ' + (err.message || err))
+      alert(`Error al ${editingId ? 'guardar' : 'crear'} tipo de documento: ` + (err.message || err))
     }
   }
 
@@ -141,12 +120,12 @@ export function TiposDocumento() {
     }
   }
 
-  const tipoForm = (mode: 'create' | 'edit') => (
-    <form onSubmit={mode === 'create' ? handleCreate : handleEdit} className="space-y-4">
+  const dialogForm = (
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor={`nombre-${mode}`}>Nombre *</Label>
+        <Label htmlFor="nombre">Nombre *</Label>
         <Input
-          id={`nombre-${mode}`}
+          id="nombre"
           value={form.nombre}
           onChange={(e) => setForm({ ...form, nombre: e.target.value })}
           placeholder="Ej: Certificado de Nacimiento"
@@ -154,82 +133,21 @@ export function TiposDocumento() {
         />
       </div>
       <div className="space-y-2">
-        <Label>Palabras Clave (palabra:peso) *</Label>
+        <Label>Palabras Clave *</Label>
         <KeywordInput
           value={form.palabrasClave}
           onChange={(keywords) => setForm({ ...form, palabrasClave: keywords })}
-          placeholder="Ej: certificado:5, nacimiento:4"
+          placeholder="Escribir palabra y presionar Enter"
         />
         <p className="text-xs text-muted-foreground">
-          Formato: palabra:peso (peso 1-5). Mayor peso = mayor prioridad en la clasificación.
+          Palabras que identifican este tipo de documento. Se asigna peso automáticamente.
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor={`requiere-${mode}`}>Requiere (keywords)</Label>
-          <Input
-            id={`requiere-${mode}`}
-            value={form.requiere}
-            onChange={(e) => setForm({ ...form, requiere: e.target.value })}
-            placeholder="Ej: certificado, nacimiento"
-          />
-          <p className="text-xs text-muted-foreground">
-            Palabras que DEBEN estar en el texto para clasificar
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`excluye-${mode}`}>Excluye (slugs)</Label>
-          <Input
-            id={`excluye-${mode}`}
-            value={form.excluye}
-            onChange={(e) => setForm({ ...form, excluye: e.target.value })}
-            placeholder="Ej: diploma-bachiller-reverso"
-          />
-          <p className="text-xs text-muted-foreground">
-            Slugs de tipos que se excluyen mutuamente
-          </p>
-        </div>
-      </div>
-      <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor={`scoreMinimo-${mode}`}>Score Mínimo</Label>
-          <Input
-            id={`scoreMinimo-${mode}`}
-            type="number"
-            min={1}
-            max={20}
-            value={form.scoreMinimo}
-            onChange={(e) => setForm({ ...form, scoreMinimo: parseInt(e.target.value) || 3 })}
-          />
-          <p className="text-xs text-muted-foreground">
-            Score ponderado mínimo para clasificar
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor={`orden-${mode}`}>Orden</Label>
-          <Input
-            id={`orden-${mode}`}
-            type="number"
-            value={form.orden}
-            onChange={(e) => setForm({ ...form, orden: parseInt(e.target.value) || 0 })}
-          />
-        </div>
-        <div className="flex items-center gap-2 pt-6">
-          <input
-            type="checkbox"
-            id={`obligatorio-${mode}`}
-            checked={form.esObligatorio}
-            onChange={(e) => setForm({ ...form, esObligatorio: e.target.checked })}
-            className="h-4 w-4"
-          />
-          <Label htmlFor={`obligatorio-${mode}`}>Obligatorio</Label>
-        </div>
-      </div>
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={() => { setCreateOpen(false); setEditOpen(false); setForm(emptyForm) }}>
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); setForm(emptyForm); setEditingId(null) }}>
           Cancelar
         </Button>
-        <Button type="submit">{mode === 'create' ? 'Crear' : 'Guardar'}</Button>
+        <Button type="submit">{editingId ? 'Guardar' : 'Crear'}</Button>
       </div>
     </form>
   )
@@ -238,20 +156,10 @@ export function TiposDocumento() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Tipos de Documento</h1>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setForm(emptyForm)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo Tipo
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Crear Tipo de Documento</DialogTitle>
-            </DialogHeader>
-            {tipoForm('create')}
-          </DialogContent>
-        </Dialog>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nuevo Tipo
+        </Button>
       </div>
 
       <Card>
@@ -265,51 +173,23 @@ export function TiposDocumento() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Ord.</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Palabras Clave</TableHead>
-                  <TableHead>Requiere</TableHead>
-                  <TableHead>Score</TableHead>
-                  <TableHead>Obl.</TableHead>
                   <TableHead>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {tipos.map((tipo: any) => (
                   <TableRow key={tipo.id}>
-                    <TableCell>{tipo.orden}</TableCell>
                     <TableCell className="font-medium">{tipo.nombre}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {tipo.palabrasClave.split(',').map((palabra: string, i: number) => (
                           <Badge key={i} variant="secondary" className="text-xs">
-                            {palabra.trim()}
+                            {palabra.trim().split(':')[0]}
                           </Badge>
                         ))}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      {tipo.requiere ? (
-                        <div className="flex flex-wrap gap-1">
-                          {tipo.requiere.split(',').map((r: string, i: number) => (
-                            <Badge key={i} variant="outline" className="text-xs">
-                              {r.trim()}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">{'>'}= {tipo.scoreMinimo}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {tipo.esObligatorio ? (
-                        <Badge variant="destructive">Sí</Badge>
-                      ) : (
-                        <Badge variant="secondary">No</Badge>
-                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -337,12 +217,12 @@ export function TiposDocumento() {
         </CardContent>
       </Card>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Editar Tipo de Documento</DialogTitle>
+            <DialogTitle>{editingId ? 'Editar Tipo de Documento' : 'Crear Tipo de Documento'}</DialogTitle>
           </DialogHeader>
-          {tipoForm('edit')}
+          {dialogForm}
         </DialogContent>
       </Dialog>
     </div>

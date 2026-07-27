@@ -25,11 +25,6 @@ export interface TipoDocumento {
   nombre: string;
   slug: string;
   palabrasClave: string;
-  requiere: string;
-  excluye: string;
-  scoreMinimo: number;
-  esObligatorio: boolean;
-  orden: number;
   activo: boolean;
 }
 

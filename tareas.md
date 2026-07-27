@@ -298,3 +298,77 @@ mutation DeleteUnidad($id: Int!) {
 | 4 | Fase 4: Queries frontend | graphql/queries/*.ts, graphql/mutations/*.ts |
 | 5 | Fase 5: UI | Layout.tsx, todas las páginas, nueva página Unidades |
 | 6 | Fase 6: Ajustes | seeders, views, validaciones |
+
+---
+
+## FASE 7: Simplificación del Formulario de Tipo de Documento ✅ COMPLETADA
+
+### Problema
+El formulario actual tiene 7 campos visibles de golpe con terminología técnica
+(palabra:peso, requiere, excluye, score_minimo). Es confuso para el usuario promedio.
+
+### 7.1 Formulario en 2 niveles
+**Archivo:** `frontend/src/pages/configuracion/TiposDocumento.tsx`
+
+**Campos principales (siempre visibles):**
+- Nombre * (se mantiene)
+- Palabras Clave * — simplificado a solo palabras separadas por Enter (sin formato `peso`)
+- Obligatorio — checkbox simple
+
+**Opciones avanzadas (colapsable, por defecto cerrado):**
+- Requiere (keywords obligatorias)
+- Excluye (slugs)
+- Score Mínimo (default: 3)
+- Orden (default: auto-incremental)
+
+### 7.2 Auto-asignar peso
+Cuando el usuario escribe `"certificado, nacimiento"` sin formato `:peso`,
+el `handleCreate` generará automáticamente `"certificado:3, nacimiento:3"`
+antes de enviarlo al backend. Si el usuario escribe `"certificado:5"`
+manualmente, se respeta.
+
+### 7.3 Actualizar labels y placeholders
+- Label: "Palabras Clave" (quitar "(palabra:peso)")
+- Placeholder: "Escribir palabra y presionar Enter"
+- Quitar helper text técnico del peso
+
+### 7.4 Unificar create/edit en un solo form
+Mergear los dialogs de crear y editar en un solo estado compartido,
+reduciendo ~100 líneas de código duplicado.
+
+### Archivos afectados
+| Archivo | Cambio |
+|---|---|
+| `TiposDocumento.tsx` | Simplificar form, agregar collapsible, auto-peso, unificar create/edit |
+
+---
+
+## FASE 8: Eliminar Campos Avanzados del Tipo de Documento ✅ COMPLETADA
+
+### Problema
+Los campos `requiere`, `excluye`, `score_minimo`, `es_obligatorio` y `orden` agregan complejidad innecesaria tanto en la UI como en la lógica de clasificación. El usuario solo necesita definir Nombre y Palabras Clave.
+
+### Cambios realizados
+
+**Backend:**
+| Archivo | Cambio |
+|---|---|
+| `documentos/models.py` | Eliminar 5 campos, propiedades `lista_requiere`/`lista_excluye`, cambiar ordering |
+| `documentos/mutations.py` | Simplificar `clasificar_documento()` (solo score), eliminar args de Create/Update |
+| `documentos/schema.py` | Quitar 5 campos de `TipoDocumentoType` |
+| `documentos/admin.py` | Quitar `es_obligatorio` y `orden` de list_display/list_filter |
+| `storage/pdf_processor.py` | Simplificar `_classify_local()` (solo score, sin filtros previos) |
+| `documentos/migrations/0005_remove_campos_avanzados.py` | Nueva migración para eliminar los 5 campos |
+| `documentos/migrations/0004_seed_tipos_documento.py` | Limpiar campos eliminados del seed |
+
+**Frontend:**
+| Archivo | Cambio |
+|---|---|
+| `types/index.ts` | Quitar 5 campos de interface `TipoDocumento` |
+| `graphql/queries/documentos.ts` | Quitar campos de `GET_TIPOS_DOCUMENTO` y `GET_DOCUMENTOS_PERSONA` |
+| `graphql/mutations/documentos.ts` | Quitar variables/args de `CREATE` y `UPDATE` |
+| `pages/configuracion/TiposDocumento.tsx` | Form solo Nombre + Palabras Clave, tabla simplificada |
+| `pages/personas/CasilleroDocumentos.tsx` | Quitar badge "Req." |
+
+### Clasificación resultante
+El sistema ahora clasifica únicamente por score de palabras clave: busca el tipo con mayor puntaje. Sin filtros previos de requiere/excluye/score_minimo.
