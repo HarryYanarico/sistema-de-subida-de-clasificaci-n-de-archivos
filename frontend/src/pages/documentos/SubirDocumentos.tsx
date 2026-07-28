@@ -29,7 +29,9 @@ interface ResultadoBatch {
 }
 
 function extraerCodigo(filename: string): string {
-  return filename.replace(/\.pdf$/i, '').trim()
+  const sinExtension = filename.replace(/\.pdf$/i, '').trim()
+  const digitos = sinExtension.replace(/\D/g, '')
+  return digitos
 }
 
 function esCodigoValido(codigo: string): boolean {
@@ -98,6 +100,13 @@ export function SubirDocumentos() {
     try {
       const formData = new FormData()
       formData.append('unidad_id', unidadActiva.id.toString())
+
+      const userStr = localStorage.getItem('user')
+      if (userStr) {
+        const user = JSON.parse(userStr)
+        if (user.id) formData.append('user_id', user.id.toString())
+      }
+
       files.forEach((file) => {
         formData.append('pdfs', file)
       })
@@ -130,7 +139,7 @@ export function SubirDocumentos() {
         <div>
           <h1 className="text-3xl font-bold">Subir Documentos</h1>
           <p className="text-muted-foreground mt-1">
-            Cargue múltiples PDFs. El código del estudiante se extrae del nombre del archivo.
+            Los archivos se renombran automáticamente extrayendo el código de 5+ dígitos del nombre.
           </p>
         </div>
         {files.length > 0 && (
@@ -144,7 +153,7 @@ export function SubirDocumentos() {
         <CardHeader>
           <CardTitle>Archivos PDF</CardTitle>
           <CardDescription>
-            Cada archivo debe llamarse con el código de registro del estudiante (5+ dígitos, ej: 12345678.pdf)
+            El código de 5+ dígitos se extrae automáticamente del nombre del archivo (ej: 12345678.pdf o Acta_12345678.pdf)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -180,7 +189,7 @@ export function SubirDocumentos() {
                 </>
               )}
               <p className="text-xs text-muted-foreground">
-                Nombre del archivo: código de 5+ dígitos (ej: 12345678.pdf)
+                Los dígitos se extraen automáticamente (ej: 12345678.pdf o Acta_12345678.pdf)
               </p>
             </div>
             <input

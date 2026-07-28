@@ -5,11 +5,29 @@ from django.http import JsonResponse, HttpResponse, Http404
 from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import get_user_model
 from apps.personas.models import Persona
 from apps.documentos.models import Documento
 from apps.unidades.models import Unidad
 from apps.storage.pdf_processor import PDFProcessor
 from apps.storage.services import MinIOService
+
+User = get_user_model()
+
+def extract_digits_from_filename(filename: str) -> str:
+    name = filename.rsplit('.', 1)[0]
+    return re.sub(r'[^0-9]', '', name)
+
+def _get_user_from_request(request):
+    user_id = request.POST.get('user_id') or request.GET.get('user_id')
+    if user_id:
+        try:
+            return User.objects.filter(id=user_id).first()
+        except (ValueError, TypeError):
+            return None
+    if request.user.is_authenticated:
+        return request.user
+    return None
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -30,6 +48,7 @@ class UploadPDFView(View):
 
             processor = PDFProcessor()
             total_pages = 0
+            usuario = _get_user_from_request(request)
 
             for pdf_file in files:
                 file_content = pdf_file.read()
@@ -43,6 +62,7 @@ class UploadPDFView(View):
                         pagina_numero=result['pagina_numero'],
                         texto_extraido=result['texto_extraido'],
                         estado='clasificado' if result['tipo_documento'] else 'pendiente',
+                        subido_por=usuario,
                     )
                     total_pages += 1
 
@@ -78,14 +98,16 @@ class UploadBatchPDFView(View):
             errores = []
             detalles = []
 
+            usuario = _get_user_from_request(request)
+
             for pdf_file in files:
                 filename = pdf_file.name
-                codigo = filename.replace('.pdf', '').replace('.PDF', '').strip()
+                codigo = extract_digits_from_filename(filename)
 
                 if not re.match(r'^\d{5,}$', codigo):
                     errores.append({
                         'archivo': filename,
-                        'error': 'Nombre de archivo inválido. Se esperaba un código de 5 o más dígitos (ej: 12345678.pdf)',
+                        'error': 'Nombre de archivo inválido. No se pudieron extraer 5 o más dígitos (ej: 12345678.pdf o Acta_12345678.pdf)',
                     })
                     continue
 
@@ -109,6 +131,7 @@ class UploadBatchPDFView(View):
                             pagina_numero=result['pagina_numero'],
                             texto_extraido=result['texto_extraido'],
                             estado='clasificado' if result['tipo_documento'] else 'pendiente',
+                            subido_por=usuario,
                         )
                         total_paginas += 1
 
