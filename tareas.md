@@ -372,3 +372,110 @@ Los campos `requiere`, `excluye`, `score_minimo`, `es_obligatorio` y `orden` agr
 
 ### Clasificación resultante
 El sistema ahora clasifica únicamente por score de palabras clave: busca el tipo con mayor puntaje. Sin filtros previos de requiere/excluye/score_minimo.
+
+---
+
+## FASE 9: Visor de Documentos con Cards Difuminadas
+
+### Descripción
+Nuevo módulo con dos rutas: una lista de personas con filtro de búsqueda e indicador de documentos clasificados, y una vista de documentos por persona con cards de previsualización difuminada que se expanden inline.
+
+---
+
+### 9.1 Backend — Nuevo campo en query `personas`
+**Archivo:** `backend/apps/personas/schema.py`
+
+Agregar campo `tiene_documentos_clasificados: Boolean` al `PersonaType`:
+```python
+tiene_documentos_clasificados = graphene.Boolean()
+
+def resolve_tiene_documentos_clasificados(self, info):
+    return self.documentos.exclude(tipo_documento__isnull=True).exists()
+```
+
+**Archivo:** `frontend/src/graphql/queries/personas.ts`
+Agregar `tieneDocumentosClasificados` al query `GET_PERSONAS`.
+
+**Archivo:** `frontend/src/types/index.ts`
+Agregar campo opcional `tieneDocumentosClasificados?: boolean` a `Persona`.
+
+---
+
+### 9.2 Ruta `/vista-persona` — Lista de personas
+**Archivo:** `frontend/src/pages/personas/VistaPersonaLista.tsx` (nuevo)
+
+- Input de búsqueda (por nombre, código, CI)
+- Paginación (10 por página)
+- Tabla con columnas: Código, Nombres, Apellidos, CI, **Tiene docs. clasificados** (Sí/No badge)
+- Al hacer clic en una fila → navega a `/vista-persona/:id`
+- Usa `GET_PERSONAS` (con el nuevo campo `tieneDocumentosClasificados`)
+
+---
+
+### 9.3 Ruta `/vista-persona/:id` — Visor de documentos
+**Archivo:** `frontend/src/pages/personas/VistaPersonaDocumentos.tsx` (nuevo)
+
+- Botón "Volver" (esquina superior izquierda) → `/vista-persona`
+- Encabezado con datos de la persona (nombre, código, CI)
+- Grid responsivo de cards (3 cols lg, 2 md, 1 sm)
+- **Solo documentos clasificados** (con `tipoDocumento` asignado)
+- **Card (cerrada):**
+  - Thumbnail con `filter: blur(8px) brightness(0.7)`
+  - Badge con nombre del tipo de documento
+  - Número de página
+  - Cursor pointer
+- **Card (expandida):** al hacer clic
+  - Ocupa todo el ancho (`grid-column: 1 / -1`)
+  - Muestra PDF en `<iframe>` sin difuminar
+  - Botón **Imprimir** (abre PDF en nueva ventana + `print()`)
+  - Botón **Cerrar** (vuelve a estado compacto)
+  - Animación CSS (`transition-all`, `max-height`/`scale`)
+- **Estados:** loading, empty ("No tiene documentos clasificados"), error
+
+Usa `GET_PERSONA` + `GET_DOCUMENTOS_PERSONA`.
+
+---
+
+### 9.4 Nuevas rutas en `App.tsx`
+**Archivo:** `frontend/src/App.tsx`
+
+- Importar `VistaPersonaLista` y `VistaPersonaDocumentos`
+- Agregar:
+  ```tsx
+  <Route path="/vista-persona" element={<VistaPersonaLista />} />
+  <Route path="/vista-persona/:id" element={<VistaPersonaDocumentos />} />
+  ```
+
+---
+
+### 9.5 Sidebar
+**Archivo:** `frontend/src/components/layout/Layout.tsx`
+
+Agregar item al array `navigation`:
+```tsx
+{ name: 'Visor Documentos', href: '/vista-persona', icon: Eye }
+```
+Importar `Eye` desde `lucide-react` si no está ya importado.
+
+---
+
+### Archivos afectados
+
+| Archivo | Cambio |
+|---|---|
+| `backend/apps/personas/schema.py` | Agregar `tiene_documentos_clasificados` a `PersonaType` |
+| `frontend/src/types/index.ts` | Agregar campo a `Persona` |
+| `frontend/src/graphql/queries/personas.ts` | Agregar campo a `GET_PERSONAS` |
+| `frontend/src/pages/personas/VistaPersonaLista.tsx` | **Nuevo** — lista con búsqueda e indicador |
+| `frontend/src/pages/personas/VistaPersonaDocumentos.tsx` | **Nuevo** — cards difuminadas, expansión inline |
+| `frontend/src/App.tsx` | Agregar rutas |
+| `frontend/src/components/layout/Layout.tsx` | Agregar nav item |
+
+### Orden de ejecución
+
+1. Backend: agregar campo `tiene_documentos_clasificados` a `PersonaType`
+2. Frontend: agregar campo a types y query de personas
+3. Crear `VistaPersonaLista.tsx`
+4. Crear `VistaPersonaDocumentos.tsx`
+5. Agregar rutas en `App.tsx`
+6. Agregar nav item en `Layout.tsx`

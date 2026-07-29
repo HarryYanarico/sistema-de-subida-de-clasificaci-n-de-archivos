@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { GET_PERSONA } from '@/graphql/queries/personas'
 import { GET_DOCUMENTOS_PERSONA, GET_TIPOS_DOCUMENTO } from '@/graphql/queries/documentos'
-import { ASIGNAR_DOCUMENTO } from '@/graphql/mutations/documentos'
+import { ASIGNAR_DOCUMENTO, SUGERIR_CLASIFICACION_IA } from '@/graphql/mutations/documentos'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,8 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { ArrowLeft, FileText, AlertCircle, User, Printer, Calendar, Mail, Phone, CreditCard } from 'lucide-react'
+import { ArrowLeft, FileText, AlertCircle, User, Printer, Calendar, Mail, Phone, CreditCard, Sparkles, Loader2 } from 'lucide-react'
 import { useUnidad } from '@/contexts/UnidadContext'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 export function CasilleroDocumentos() {
   const { id } = useParams<{ id: string }>()
@@ -59,6 +61,35 @@ export function CasilleroDocumentos() {
   const openDocViewer = (doc: any) => {
     setSelectedDoc(doc)
     setShowDialog(true)
+  }
+
+  const [sugerirIA] = useMutation(SUGERIR_CLASIFICACION_IA)
+  const [loadingSugerirId, setLoadingSugerirId] = useState<number | null>(null)
+  const [suggestionDoc, setSuggestionDoc] = useState<any>(null)
+  const [suggestionResult, setSuggestionResult] = useState<any>(null)
+  const [showSuggestionDialog, setShowSuggestionDialog] = useState(false)
+
+  const handleSugerirIA = async (doc: any) => {
+    const docId = parseInt(doc.id)
+    setLoadingSugerirId(docId)
+    try {
+      const { data } = await sugerirIA({ variables: { documentoId: docId } })
+      if (data?.sugerirClasificacionIa?.success) {
+        setSuggestionDoc(doc)
+        setSuggestionResult(data.sugerirClasificacionIa)
+        setShowSuggestionDialog(true)
+      }
+    } finally {
+      setLoadingSugerirId(null)
+    }
+  }
+
+  const handleAplicarSugerencia = async () => {
+    if (!suggestionResult?.tipoSugerido || !suggestionDoc) return
+    await handleAsignar(suggestionDoc.id, suggestionResult.tipoSugerido.id.toString())
+    setShowSuggestionDialog(false)
+    setSuggestionDoc(null)
+    setSuggestionResult(null)
   }
 
   const handlePrint = () => {
@@ -231,14 +262,30 @@ export function CasilleroDocumentos() {
                       <span className="text-sm font-medium truncate">{tipo.nombre}</span>
                     </div>
                     {hasDoc ? (
-                      <div className="flex items-center gap-2">
-                        <Badge variant="success" className="text-xs">Pág. {doc.paginaNumero}</Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="success" className="text-xs flex-shrink-0">Pág. {doc.paginaNumero}</Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={(e: React.MouseEvent) => {
+                            e.stopPropagation()
+                            handleSugerirIA(doc)
+                          }}
+                          disabled={loadingSugerirId === doc.id}
+                        >
+                          {loadingSugerirId === doc.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3 w-3" />
+                          )}
+                        </Button>
                         <Select
                           defaultValue={tipo.id.toString()}
                           onValueChange={(value) => handleAsignar(doc.id, value)}
                         >
                           <SelectTrigger className="h-7 text-xs" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                            <SelectValue placeholder="Cambiar tipo" />
+                            <SelectValue placeholder="Cambiar" />
                           </SelectTrigger>
                           <SelectContent>
                             {tipos.map((t: any) => (
@@ -274,35 +321,53 @@ export function CasilleroDocumentos() {
               {documentos
                 .filter((doc: any) => !doc.tipoDocumento)
                 .map((doc: any) => (
-                  <div
-                    key={doc.id}
-                    onClick={() => openDocViewer(doc)}
-                    className="flex items-center justify-between p-3 rounded-lg border hover:border-primary/50 hover:bg-muted/30 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-5 w-5 text-muted-foreground" />
-                      <div>
-                        <span className="text-sm font-medium">Página {doc.paginaNumero}</span>
-                        {doc.textoExtraido && (
-                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                            {doc.textoExtraido.slice(0, 80)}...
-                          </p>
-                        )}
+                    <div
+                      key={doc.id}
+                      onClick={() => openDocViewer(doc)}
+                      className="flex items-center justify-between p-3 rounded-lg border hover:border-primary/50 hover:bg-muted/30 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium">Página {doc.paginaNumero}</span>
+                          {doc.textoExtraido && (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                              {doc.textoExtraido.slice(0, 80)}...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e: React.MouseEvent) => {
+                            e.stopPropagation()
+                            handleSugerirIA(doc)
+                          }}
+                          disabled={loadingSugerirId === doc.id}
+                        >
+                          {loadingSugerirId === doc.id ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3 w-3 mr-1" />
+                          )}
+                          Sugerir IA
+                        </Button>
+                        <Select onValueChange={(value) => handleAsignar(doc.id, value)}>
+                          <SelectTrigger className="w-[180px]" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                            <SelectValue placeholder="Seleccionar tipo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {tipos.map((tipo: any) => (
+                              <SelectItem key={tipo.id} value={tipo.id.toString()}>
+                                {tipo.nombre}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
-                    <Select onValueChange={(value) => handleAsignar(doc.id, value)}>
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Seleccionar tipo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {tipos.map((tipo: any) => (
-                          <SelectItem key={tipo.id} value={tipo.id.toString()}>
-                            {tipo.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 ))}
             </div>
           </CardContent>
@@ -338,6 +403,78 @@ export function CasilleroDocumentos() {
               />
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de sugerencia IA */}
+      <Dialog open={showSuggestionDialog} onOpenChange={setShowSuggestionDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Sugerencia de Clasificación IA
+            </DialogTitle>
+            <DialogDescription>
+              Página {suggestionDoc?.paginaNumero} — Basado en el texto extraído del documento
+            </DialogDescription>
+          </DialogHeader>
+
+          {suggestionResult && (
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Tipo de documento sugerido</Label>
+                <div className="mt-1.5 p-3 rounded-lg border bg-primary/5 flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">
+                      {suggestionResult.tipoSugerido?.nombre || 'Tipo nuevo'}
+                    </p>
+                    {suggestionResult.esNuevoTipo && (
+                      <p className="text-xs text-muted-foreground">No coincide con ningún tipo existente</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {suggestionResult.palabrasClaveSugeridas && (
+                <div>
+                  <Label className="text-sm font-medium">Palabras clave sugeridas</Label>
+                  <Input
+                    className="mt-1.5"
+                    value={suggestionResult.palabrasClaveSugeridas}
+                    readOnly
+                  />
+                </div>
+              )}
+
+              {suggestionResult.esNuevoTipo && (
+                <div className="p-3 rounded-lg bg-muted border text-sm text-muted-foreground">
+                  La IA sugiere que este documento corresponde a un tipo nuevo. Puedes crearlo desde la configuración de Tipos de Documento.
+                </div>
+              )}
+
+              {suggestionResult.rawResponse && (
+                <div>
+                  <Label className="text-sm font-medium">Respuesta de Gemini</Label>
+                  <div className="mt-1.5 p-3 rounded-lg border bg-muted/30 text-xs font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {suggestionResult.rawResponse}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button variant="outline" onClick={() => setShowSuggestionDialog(false)}>
+                  Descartar
+                </Button>
+                {suggestionResult.tipoSugerido && (
+                  <Button onClick={handleAplicarSugerencia}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Aplicar como {suggestionResult.tipoSugerido.nombre}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -14,6 +14,7 @@ export const GET_PERSONAS = gql`
         totalDocumentos
         documentosClasificados
         porcentajeCompletado
+        tieneDocumentosClasificados
         createdAt
       }
       total

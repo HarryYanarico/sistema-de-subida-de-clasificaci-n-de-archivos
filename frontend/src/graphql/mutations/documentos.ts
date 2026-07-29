@@ -91,3 +91,20 @@ export const CLASIFICAR_DOCUMENTO = gql`
     }
   }
 `;
+
+export const SUGERIR_CLASIFICACION_IA = gql`
+  mutation SugerirClasificacionIA($documentoId: Int!) {
+    sugerirClasificacionIa(documentoId: $documentoId) {
+      tipoSugerido {
+        id
+        nombre
+        slug
+      }
+      palabrasClaveSugeridas
+      esNuevoTipo
+      rawResponse
+      success
+      message
+    }
+  }
+`;

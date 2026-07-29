@@ -6,6 +6,8 @@ import { Dashboard } from './pages/Dashboard'
 import { ListaPersonas } from './pages/personas/ListaPersonas'
 import { RegistrarPersona } from './pages/personas/RegistrarPersona'
 import { CasilleroDocumentos } from './pages/personas/CasilleroDocumentos'
+import { VistaPersonaLista } from './pages/personas/VistaPersonaLista'
+import { VistaPersonaDocumentos } from './pages/personas/VistaPersonaDocumentos'
 import { TiposDocumento } from './pages/configuracion/TiposDocumento'
 import { Unidades } from './pages/configuracion/Unidades'
 import { SubirDocumentos } from './pages/documentos/SubirDocumentos'
@@ -37,6 +39,8 @@ function App() {
         <Route path="/personas" element={<ListaPersonas />} />
         <Route path="/personas/nueva" element={<RegistrarPersona />} />
         <Route path="/personas/:id" element={<CasilleroDocumentos />} />
+        <Route path="/vista-persona" element={<VistaPersonaLista />} />
+        <Route path="/vista-persona/:id" element={<VistaPersonaDocumentos />} />
         <Route path="/documentos/subir" element={<SubirDocumentos />} />
         <Route path="/documentos/pendientes" element={<DocumentosPendientes />} />
         <Route path="/configuracion/tipos-documento" element={<TiposDocumento />} />

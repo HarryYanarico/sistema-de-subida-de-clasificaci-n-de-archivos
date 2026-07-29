@@ -91,7 +91,6 @@ class UpdateTipoDocumento(graphene.Mutation):
             if activo is not None:
                 tipo.activo = activo
             tipo.save()
-            reclasificar_todos(unidad=tipo.unidad)
             return UpdateTipoDocumento(tipo_documento=tipo, success=True, message="Tipo actualizado")
         except Exception as e:
             return UpdateTipoDocumento(tipo_documento=None, success=False, message=str(e))
@@ -168,9 +167,54 @@ class ClasificarDocumento(graphene.Mutation):
             return ClasificarDocumento(documento=None, success=False, message=str(e))
 
 
+class SugerirClasificacionIA(graphene.Mutation):
+    class Arguments:
+        documento_id = graphene.Int(required=True)
+
+    tipo_sugerido = graphene.Field(TipoDocumentoType)
+    palabras_clave_sugeridas = graphene.String()
+    es_nuevo_tipo = graphene.Boolean()
+    raw_response = graphene.String()
+    success = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info, documento_id):
+        try:
+            from apps.storage.ai_classifier import GeminiClassifier
+
+            doc = Documento.objects.filter(id=documento_id).first()
+            if not doc:
+                return SugerirClasificacionIA(success=False, message="Documento no encontrado")
+
+            if not doc.texto_extraido or len(doc.texto_extraido.strip()) < 20:
+                return SugerirClasificacionIA(success=False, message="El documento no tiene texto extraído suficiente")
+
+            unidad = doc.persona.unidad
+            tipos = list(TipoDocumento.objects.filter(unidad=unidad, activo=True).values('id', 'nombre', 'slug'))
+
+            classifier = GeminiClassifier()
+            if not classifier.is_available:
+                return SugerirClasificacionIA(success=False, message="Gemini IA no está configurado. Verifica GEMINI_API_KEY")
+
+            result = classifier.suggest_classification(doc.texto_extraido, tipos)
+
+            return SugerirClasificacionIA(
+                tipo_sugerido=result['tipo_sugerido'],
+                palabras_clave_sugeridas=result['palabras_clave'],
+                es_nuevo_tipo=result.get('es_nuevo_tipo', False),
+                raw_response=result.get('raw_response', ''),
+                success=True,
+                message="Sugerencia generada correctamente",
+            )
+
+        except Exception as e:
+            return SugerirClasificacionIA(success=False, message=str(e))
+
+
 class Mutation(graphene.ObjectType):
     create_tipo_documento = CreateTipoDocumento.Field()
     update_tipo_documento = UpdateTipoDocumento.Field()
     delete_tipo_documento = DeleteTipoDocumento.Field()
     asignar_documento = AsignarDocumento.Field()
     clasificar_documento = ClasificarDocumento.Field()
+    sugerir_clasificacion_ia = SugerirClasificacionIA.Field()

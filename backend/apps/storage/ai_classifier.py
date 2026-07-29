@@ -29,6 +29,79 @@ class GeminiClassifier:
     def is_available(self):
         return self.model is not None
 
+    def suggest_classification(self, text: str, tipos_documento: list[dict]) -> dict:
+        if not self.is_available:
+            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False}
+
+        if not text or len(text.strip()) < 20:
+            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False}
+
+        text_truncated = text[:1000]
+
+        tipos_nombres = '\n'.join(
+            f'- {t["nombre"]}' for t in tipos_documento
+        )
+
+        prompt = f"""Eres un clasificador de documentos escaneados de una universidad en Bolivia.
+Analiza el siguiente texto extraido de un documento.
+
+Tipos de documento disponibles:
+{tipos_nombres}
+
+Instrucciones:
+1. Determina a qué tipo de documento corresponde el texto. Si ninguno es adecuado, responde "NUEVO".
+2. Extrae palabras clave relevantes del texto que permitan identificar este tipo de documento.
+
+Responde EXACTAMENTE en este formato (2 líneas):
+TIPO: [nombre exacto del tipo de documento de la lista, o NUEVO si no existe uno adecuado]
+KEYWORDS: [lista de palabras clave separadas por coma, en minusculas, sin acentos]
+
+Ejemplo:
+TIPO: Certificado de Nacimiento
+KEYWORDS: certificado, nacimiento, registro civil, partida, nacido
+
+Texto del documento:
+{text_truncated}"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            respuesta = response.text.strip()
+
+            tipo_sugerido = None
+            palabras_clave = ''
+            es_nuevo_tipo = False
+
+            for line in respuesta.split('\n'):
+                line = line.strip()
+                if line.upper().startswith('TIPO:'):
+                    raw_tipo = line[5:].strip().strip('"\'').strip()
+                    if raw_tipo.upper() == 'NUEVO':
+                        es_nuevo_tipo = True
+                    else:
+                        for tipo in tipos_documento:
+                            if tipo['nombre'].lower() == raw_tipo.lower():
+                                tipo_sugerido = tipo
+                                break
+                        if not tipo_sugerido:
+                            for tipo in tipos_documento:
+                                if tipo['nombre'].lower() in raw_tipo.lower():
+                                    tipo_sugerido = tipo
+                                    break
+                elif line.upper().startswith('KEYWORDS:'):
+                    keywords_raw = line[9:].strip().strip('"\'').strip()
+                    palabras_clave = keywords_raw
+
+            return {
+                'tipo_sugerido': tipo_sugerido,
+                'palabras_clave': palabras_clave,
+                'es_nuevo_tipo': es_nuevo_tipo,
+                'raw_response': respuesta,
+            }
+
+        except Exception as e:
+            logger.error(f'Error en sugerencia Gemini: {e}')
+            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False, 'raw_response': str(e)}
+
     def classify(self, text: str, tipos_documento: list[dict]) -> str | None:
         if not self.is_available:
             return None
