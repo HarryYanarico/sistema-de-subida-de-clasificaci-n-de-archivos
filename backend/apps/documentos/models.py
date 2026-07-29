@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 from apps.personas.models import Persona
 
 
@@ -64,6 +65,10 @@ class Documento(models.Model):
         TipoDocumento, on_delete=models.SET_NULL, null=True, blank=True, related_name='documentos'
     )
     archivo_original = models.CharField(max_length=500, help_text="Ruta del PDF original en MinIO")
+    subido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='documentos_subidos', verbose_name='Subido por'
+    )
     archivo_pagina = models.CharField(
         max_length=500, null=True, blank=True,
         help_text="Ruta de la página individual en MinIO (obsoleto, se extrae on-the-fly)"
