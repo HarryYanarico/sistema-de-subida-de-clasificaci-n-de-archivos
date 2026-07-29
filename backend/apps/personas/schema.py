@@ -8,6 +8,7 @@ class PersonaType(DjangoObjectType):
     total_documentos = graphene.Int()
     documentos_clasificados = graphene.Int()
     porcentaje_completado = graphene.Float()
+    tiene_documentos_clasificados = graphene.Boolean()
 
     class Meta:
         model = Persona
@@ -25,6 +26,9 @@ class PersonaType(DjangoObjectType):
             return 0
         clasificados = self.documentos.exclude(tipo_documento__isnull=True).count()
         return round((clasificados / total) * 100, 2)
+
+    def resolve_tiene_documentos_clasificados(self, info):
+        return self.documentos.exclude(tipo_documento__isnull=True).exists()
 
 
 class PersonaConnection(graphene.ObjectType):

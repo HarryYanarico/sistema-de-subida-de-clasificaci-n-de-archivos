@@ -17,6 +17,7 @@ export interface Persona {
   totalDocumentos: number;
   documentosClasificados: number;
   porcentajeCompletado: number;
+  tieneDocumentosClasificados?: boolean;
   createdAt: string;
 }
 

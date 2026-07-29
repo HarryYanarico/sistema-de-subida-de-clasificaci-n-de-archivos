@@ -8,7 +8,8 @@ import {
   X,
   FileText,
   AlertCircle,
-  Building2
+  Building2,
+  Eye
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Personas', href: '/personas', icon: Users },
+  { name: 'Visor Documentos', href: '/vista-persona', icon: Eye },
   { name: 'Subir Documentos', href: '/documentos/subir', icon: Upload },
   { name: 'Documentos Pendientes', href: '/documentos/pendientes', icon: AlertCircle },
   { name: 'Unidades', href: '/configuracion/unidades', icon: Building2 },
