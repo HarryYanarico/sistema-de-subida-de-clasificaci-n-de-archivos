@@ -479,3 +479,54 @@ Importar `Eye` desde `lucide-react` si no está ya importado.
 4. Crear `VistaPersonaDocumentos.tsx`
 5. Agregar rutas en `App.tsx`
 6. Agregar nav item en `Layout.tsx`
+
+---
+
+## FASE 10: Docker Compose — Infraestructura
+
+### Problema
+El `docker compose up --build` no funciona. No aparecen contenedores en Docker Desktop.
+
+### Causa raíz
+Docker Desktop tiene un proxy interno configurado (`HTTP Proxy: http.docker.internal:3128`) que intercepta las conexiones HTTP de los contenedores pero no las reenvía correctamente. Esto impide que `apt-get update` descargue paquetes desde los repositorios de Debian/Ubuntu dentro de las imágenes.
+
+**Diagnóstico confirmado:**
+- DNS resuelve correctamente (ping a `deb.debian.org` funciona)
+- Puertos 80 y 443 funcionan desde la máquina host
+- No funcionan desde dentro de contenedores Docker (ni bridge ni host network)
+- Afecta a todas las imágenes Debian/Ubuntu, no solo a una específica
+
+### Cambios ya realizados
+
+| Archivo | Cambio |
+|---|---|
+| `subida-arquitectura/.env` | `POSTGRES_HOST=localhost` → `POSTGRES_HOST=host.docker.internal` |
+| `subida-arquitectura/docker/frontend/Dockerfile` | Agregar `--host 0.0.0.0` al CMD de Vite |
+| `subida-arquitectura/docker-compose.override.yml` | Eliminar redefinición de `build` innecesaria |
+
+### Pendiente: Solucionar el proxy de Docker Desktop
+
+**Opción A (recomendada): Desactivar proxy en Docker Desktop**
+1. Abrir Docker Desktop → Settings → Resources → Proxies
+2. Desactivar "Manual proxy configuration" (o poner en blanco)
+3. Apply & Restart
+4. Volver a correr `docker compose up --build`
+
+**Opción B: Configurar proxy en el Dockerfile del backend**
+Si no se puede desactivar el proxy, modificar `subida-arquitectura/docker/backend/Dockerfile`:
+```dockerfile
+RUN echo 'Acquire::http::Proxy "http.docker.internal:3128";' > /etc/apt/apt.conf.d/proxy.conf && \
+    apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+```
+
+### Verificación
+Una vez solucionado el proxy, correr:
+```bash
+cd subida-arquitectura
+docker compose up --build
+```
+Esperar ver en Docker Desktop:
+- `subida-arquitectura-minio-1` (puerto 9001 para consola)
+- `subida-arquitectura-backend-1` (puerto 8000)
+- `subida-arquitectura-frontend-1` (puerto 5173)
