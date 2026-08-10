@@ -1,0 +1,11 @@
+services:
+  backend:
+    volumes:
+      - ../subida-backend:/app
+    command: python manage.py runserver 0.0.0.0:8000
+
+  frontend:
+    volumes:
+      - ../subida-frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
