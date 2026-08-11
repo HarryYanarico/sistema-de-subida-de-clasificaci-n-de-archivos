@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { GET_PERSONA } from '@/graphql/queries/personas'
 import { GET_DOCUMENTOS_PERSONA, GET_TIPOS_DOCUMENTO } from '@/graphql/queries/documentos'
-import { ASIGNAR_DOCUMENTO, SUGERIR_CLASIFICACION_IA } from '@/graphql/mutations/documentos'
+import { ASIGNAR_DOCUMENTO, SUGERIR_CLASIFICACION_IA, CREAR_Y_ASIGNAR_TIPO_IA } from '@/graphql/mutations/documentos'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -47,7 +47,7 @@ export function CasilleroDocumentos() {
   const handleAsignar = async (documentoId: number, tipoDocumentoId: string) => {
     await asignarDocumento({
       variables: {
-        documentoId,
+        documentoId: parseInt(String(documentoId)),
         tipoDocumentoId: parseInt(tipoDocumentoId),
       },
     })
@@ -64,10 +64,13 @@ export function CasilleroDocumentos() {
   }
 
   const [sugerirIA] = useMutation(SUGERIR_CLASIFICACION_IA)
+  const [crearYAsignarTipo] = useMutation(CREAR_Y_ASIGNAR_TIPO_IA)
   const [loadingSugerirId, setLoadingSugerirId] = useState<number | null>(null)
   const [suggestionDoc, setSuggestionDoc] = useState<any>(null)
   const [suggestionResult, setSuggestionResult] = useState<any>(null)
   const [showSuggestionDialog, setShowSuggestionDialog] = useState(false)
+  const [nombreNuevoTipo, setNombreNuevoTipo] = useState('')
+  const [loadingCrearTipo, setLoadingCrearTipo] = useState(false)
 
   const handleSugerirIA = async (doc: any) => {
     const docId = parseInt(doc.id)
@@ -77,6 +80,7 @@ export function CasilleroDocumentos() {
       if (data?.sugerirClasificacionIa?.success) {
         setSuggestionDoc(doc)
         setSuggestionResult(data.sugerirClasificacionIa)
+        setNombreNuevoTipo(data.sugerirClasificacionIa.nombreSugerido || '')
         setShowSuggestionDialog(true)
       }
     } finally {
@@ -90,6 +94,29 @@ export function CasilleroDocumentos() {
     setShowSuggestionDialog(false)
     setSuggestionDoc(null)
     setSuggestionResult(null)
+  }
+
+  const handleCrearYAsignar = async () => {
+    if (!suggestionDoc || !nombreNuevoTipo.trim()) return
+    setLoadingCrearTipo(true)
+    try {
+      const { data } = await crearYAsignarTipo({
+        variables: {
+          documentoId: parseInt(suggestionDoc.id),
+          nombre: nombreNuevoTipo.trim(),
+          palabrasClave: suggestionResult?.palabrasClaveSugeridas || '',
+        },
+      })
+      if (data?.crearYAsignarTipoIa?.success) {
+        setShowSuggestionDialog(false)
+        setSuggestionDoc(null)
+        setSuggestionResult(null)
+        setNombreNuevoTipo('')
+        refetch()
+      }
+    } finally {
+      setLoadingCrearTipo(false)
+    }
   }
 
   const handlePrint = () => {
@@ -427,7 +454,7 @@ export function CasilleroDocumentos() {
                   <FileText className="h-5 w-5 text-primary" />
                   <div>
                     <p className="font-medium">
-                      {suggestionResult.tipoSugerido?.nombre || 'Tipo nuevo'}
+                      {suggestionResult.tipoSugerido?.nombre || suggestionResult.nombreSugerido || 'Tipo nuevo'}
                     </p>
                     {suggestionResult.esNuevoTipo && (
                       <p className="text-xs text-muted-foreground">No coincide con ningún tipo existente</p>
@@ -435,6 +462,18 @@ export function CasilleroDocumentos() {
                   </div>
                 </div>
               </div>
+
+              {suggestionResult.esNuevoTipo && (
+                <div>
+                  <Label className="text-sm font-medium">Nombre del nuevo tipo</Label>
+                  <Input
+                    className="mt-1.5"
+                    value={nombreNuevoTipo}
+                    onChange={(e) => setNombreNuevoTipo(e.target.value)}
+                    placeholder="Ej: Libreta de Notas"
+                  />
+                </div>
+              )}
 
               {suggestionResult.palabrasClaveSugeridas && (
                 <div>
@@ -444,12 +483,6 @@ export function CasilleroDocumentos() {
                     value={suggestionResult.palabrasClaveSugeridas}
                     readOnly
                   />
-                </div>
-              )}
-
-              {suggestionResult.esNuevoTipo && (
-                <div className="p-3 rounded-lg bg-muted border text-sm text-muted-foreground">
-                  La IA sugiere que este documento corresponde a un tipo nuevo. Puedes crearlo desde la configuración de Tipos de Documento.
                 </div>
               )}
 
@@ -470,6 +503,16 @@ export function CasilleroDocumentos() {
                   <Button onClick={handleAplicarSugerencia}>
                     <Sparkles className="h-4 w-4 mr-2" />
                     Aplicar como {suggestionResult.tipoSugerido.nombre}
+                  </Button>
+                )}
+                {suggestionResult.esNuevoTipo && (
+                  <Button onClick={handleCrearYAsignar} disabled={loadingCrearTipo || !nombreNuevoTipo.trim()}>
+                    {loadingCrearTipo ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-2" />
+                    )}
+                    Crear tipo y asignar
                   </Button>
                 )}
               </div>

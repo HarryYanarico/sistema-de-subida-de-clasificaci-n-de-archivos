@@ -278,7 +278,7 @@ export function SubirDocumentos() {
                       <Badge variant="secondary" className="text-xs">{det.persona_codigo}</Badge>
                       <span className="text-sm text-muted-foreground hidden sm:inline">→ {det.persona_nombre}</span>
                       <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">{det.paginas} páginas</span>
-                      <Link to={`/personas/${det.persona_id}`}>
+                      <Link to={`/personas/${det.persona_id}/casillero`}>
                         <Button variant="outline" size="sm" className="h-6 text-xs">Ver casillero</Button>
                       </Link>
                     </div>

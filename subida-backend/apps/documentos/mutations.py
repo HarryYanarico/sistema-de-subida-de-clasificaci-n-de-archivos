@@ -174,6 +174,7 @@ class SugerirClasificacionIA(graphene.Mutation):
     tipo_sugerido = graphene.Field(TipoDocumentoType)
     palabras_clave_sugeridas = graphene.String()
     es_nuevo_tipo = graphene.Boolean()
+    nombre_sugerido = graphene.String()
     raw_response = graphene.String()
     success = graphene.Boolean()
     message = graphene.String()
@@ -190,7 +191,8 @@ class SugerirClasificacionIA(graphene.Mutation):
                 return SugerirClasificacionIA(success=False, message="El documento no tiene texto extraído suficiente")
 
             unidad = doc.persona.unidad
-            tipos = list(TipoDocumento.objects.filter(unidad=unidad, activo=True).values('id', 'nombre', 'slug'))
+            tipos_qs = TipoDocumento.objects.filter(unidad=unidad, activo=True)
+            tipos = [{'id': t.id, 'nombre': t.nombre, 'slug': t.slug} for t in tipos_qs]
 
             classifier = GeminiClassifier()
             if not classifier.is_available:
@@ -198,10 +200,15 @@ class SugerirClasificacionIA(graphene.Mutation):
 
             result = classifier.suggest_classification(doc.texto_extraido, tipos)
 
+            tipo_sugerido_instance = None
+            if result.get('tipo_sugerido'):
+                tipo_sugerido_instance = tipos_qs.filter(id=result['tipo_sugerido']['id']).first()
+
             return SugerirClasificacionIA(
-                tipo_sugerido=result['tipo_sugerido'],
+                tipo_sugerido=tipo_sugerido_instance,
                 palabras_clave_sugeridas=result['palabras_clave'],
                 es_nuevo_tipo=result.get('es_nuevo_tipo', False),
+                nombre_sugerido=result.get('nombre_sugerido', ''),
                 raw_response=result.get('raw_response', ''),
                 success=True,
                 message="Sugerencia generada correctamente",
@@ -211,6 +218,51 @@ class SugerirClasificacionIA(graphene.Mutation):
             return SugerirClasificacionIA(success=False, message=str(e))
 
 
+class CrearYAsignarTipoIA(graphene.Mutation):
+    class Arguments:
+        documento_id = graphene.Int(required=True)
+        nombre = graphene.String(required=True)
+        palabras_clave = graphene.String(required=True)
+
+    tipo_documento = graphene.Field(TipoDocumentoType)
+    documento = graphene.Field(DocumentoType)
+    success = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info, documento_id, nombre, palabras_clave):
+        try:
+            doc = Documento.objects.filter(id=documento_id).first()
+            if not doc:
+                return CrearYAsignarTipoIA(tipo_documento=None, documento=None, success=False, message="Documento no encontrado")
+
+            unidad = doc.persona.unidad
+            slug = re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
+
+            if TipoDocumento.objects.filter(slug=slug, unidad=unidad).exists():
+                tipo = TipoDocumento.objects.filter(slug=slug, unidad=unidad).first()
+            else:
+                tipo = TipoDocumento.objects.create(
+                    unidad=unidad,
+                    nombre=nombre,
+                    slug=slug,
+                    palabras_clave=palabras_clave,
+                )
+                reclasificar_todos(unidad=unidad)
+
+            doc.tipo_documento = tipo
+            doc.estado = 'clasificado'
+            doc.save()
+
+            return CrearYAsignarTipoIA(
+                tipo_documento=tipo,
+                documento=doc,
+                success=True,
+                message=f"Tipo '{nombre}' creado y documento asignado correctamente",
+            )
+        except Exception as e:
+            return CrearYAsignarTipoIA(tipo_documento=None, documento=None, success=False, message=str(e))
+
+
 class Mutation(graphene.ObjectType):
     create_tipo_documento = CreateTipoDocumento.Field()
     update_tipo_documento = UpdateTipoDocumento.Field()
@@ -218,3 +270,4 @@ class Mutation(graphene.ObjectType):
     asignar_documento = AsignarDocumento.Field()
     clasificar_documento = ClasificarDocumento.Field()
     sugerir_clasificacion_ia = SugerirClasificacionIA.Field()
+    crear_y_asignar_tipo_ia = CrearYAsignarTipoIA.Field()

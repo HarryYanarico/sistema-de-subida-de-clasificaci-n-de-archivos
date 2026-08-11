@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class GeminiClassifier:
     def __init__(self):
         self.api_key = getattr(settings, 'GEMINI_API_KEY', '')
-        self.model = None
+        self.client = None
         self._configure()
 
     def _configure(self):
@@ -16,25 +16,24 @@ class GeminiClassifier:
             return
 
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
+            from google import genai
+            self.client = genai.Client(api_key=self.api_key)
             logger.info('Gemini clasificador inicializado correctamente.')
         except ImportError:
-            logger.error('google-generativeai no instalado. pip install google-generativeai')
+            logger.error('google-genai no instalado. pip install google-genai')
         except Exception as e:
             logger.error(f'Error configurando Gemini: {e}')
 
     @property
     def is_available(self):
-        return self.model is not None
+        return self.client is not None
 
     def suggest_classification(self, text: str, tipos_documento: list[dict]) -> dict:
         if not self.is_available:
-            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False}
+            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False, 'nombre_sugerido': ''}
 
         if not text or len(text.strip()) < 20:
-            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False}
+            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False, 'nombre_sugerido': ''}
 
         text_truncated = text[:1000]
 
@@ -49,27 +48,38 @@ Tipos de documento disponibles:
 {tipos_nombres}
 
 Instrucciones:
-1. Determina a qué tipo de documento corresponde el texto. Si ninguno es adecuado, responde "NUEVO".
+1. Determina a qué tipo de documento corresponde el texto. Si ninguno es adecuado, responde "NUEVO" y sugiere un nombre para el nuevo tipo.
 2. Extrae palabras clave relevantes del texto que permitan identificar este tipo de documento.
 
-Responde EXACTAMENTE en este formato (2 líneas):
+Responde EXACTAMENTE en este formato (3 líneas):
 TIPO: [nombre exacto del tipo de documento de la lista, o NUEVO si no existe uno adecuado]
+NOMBRE_NUEVO: [si TIPO es NUEVO, sugiere un nombre corto y descriptivo para el tipo. Si TIPO no es NUEVO, dejalo vacio]
 KEYWORDS: [lista de palabras clave separadas por coma, en minusculas, sin acentos]
 
-Ejemplo:
+Ejemplo 1 (tipo existente):
 TIPO: Certificado de Nacimiento
+NOMBRE_NUEVO:
 KEYWORDS: certificado, nacimiento, registro civil, partida, nacido
+
+Ejemplo 2 (tipo nuevo):
+TIPO: NUEVO
+NEMON_NUEVO: Libreta de Notas
+KEYWORDS: libreta, notas, calificaciones, promedio, semestre
 
 Texto del documento:
 {text_truncated}"""
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt,
+            )
             respuesta = response.text.strip()
 
             tipo_sugerido = None
             palabras_clave = ''
             es_nuevo_tipo = False
+            nombre_sugerido = ''
 
             for line in respuesta.split('\n'):
                 line = line.strip()
@@ -87,6 +97,8 @@ Texto del documento:
                                 if tipo['nombre'].lower() in raw_tipo.lower():
                                     tipo_sugerido = tipo
                                     break
+                elif line.upper().startswith('NOMBRE_NUEVO:'):
+                    nombre_sugerido = line[12:].strip().strip('"\'').strip()
                 elif line.upper().startswith('KEYWORDS:'):
                     keywords_raw = line[9:].strip().strip('"\'').strip()
                     palabras_clave = keywords_raw
@@ -95,12 +107,13 @@ Texto del documento:
                 'tipo_sugerido': tipo_sugerido,
                 'palabras_clave': palabras_clave,
                 'es_nuevo_tipo': es_nuevo_tipo,
+                'nombre_sugerido': nombre_sugerido,
                 'raw_response': respuesta,
             }
 
         except Exception as e:
             logger.error(f'Error en sugerencia Gemini: {e}')
-            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False, 'raw_response': str(e)}
+            return {'tipo_sugerido': None, 'palabras_clave': '', 'es_nuevo_tipo': False, 'nombre_sugerido': '', 'raw_response': str(e)}
 
     def classify(self, text: str, tipos_documento: list[dict]) -> str | None:
         if not self.is_available:
@@ -130,7 +143,10 @@ Texto del documento:
 {text_truncated}"""
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt,
+            )
             respuesta = response.text.strip()
 
             respuesta_limpia = respuesta.strip('"\'').strip()

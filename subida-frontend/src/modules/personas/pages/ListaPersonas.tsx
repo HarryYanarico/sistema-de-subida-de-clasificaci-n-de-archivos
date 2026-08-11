@@ -30,7 +30,7 @@ export function ListaPersonas() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Personas</h1>
-        <Link to="/personas/nueva">
+        <Link to="/personas/registrar">
           <Button>
             <Plus className="h-4 w-4 mr-2" />
             Nueva Persona
@@ -96,7 +96,7 @@ export function ListaPersonas() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Link to={`/personas/${persona.id}`}>
+                        <Link to={`/personas/${persona.id}/casillero`}>
                           <Button variant="ghost" size="sm">
                             <Eye className="h-4 w-4" />
                           </Button>

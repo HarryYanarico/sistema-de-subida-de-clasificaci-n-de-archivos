@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { useQuery } from '@apollo/client'
-import { GET_UNIDADES } from '../../graphql/queries/unidades'
+import { GET_UNIDADES } from '@/graphql/queries/unidades'
 import { Unidad } from '../types'
 
 interface UnidadContextType {
