@@ -118,7 +118,7 @@ export function DocumentosPendientes() {
                       </p>
                     </div>
                   </div>
-                  <Link to={`/personas/${persona.id}`}>
+                  <Link to={`/personas/${persona.id}/casillero`}>
                     <Button variant="ghost" size="sm">
                       Ver casillero
                       <ChevronRight className="h-4 w-4 ml-1" />

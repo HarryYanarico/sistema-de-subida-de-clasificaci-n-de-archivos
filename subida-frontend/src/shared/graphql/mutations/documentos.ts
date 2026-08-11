@@ -102,7 +102,39 @@ export const SUGERIR_CLASIFICACION_IA = gql`
       }
       palabrasClaveSugeridas
       esNuevoTipo
+      nombreSugerido
       rawResponse
+      success
+      message
+    }
+  }
+`;
+
+export const CREAR_Y_ASIGNAR_TIPO_IA = gql`
+  mutation CrearYAsignarTipoIA(
+    $documentoId: Int!
+    $nombre: String!
+    $palabrasClave: String!
+  ) {
+    crearYAsignarTipoIa(
+      documentoId: $documentoId
+      nombre: $nombre
+      palabrasClave: $palabrasClave
+    ) {
+      tipoDocumento {
+        id
+        nombre
+        slug
+        palabrasClave
+      }
+      documento {
+        id
+        estado
+        tipoDocumento {
+          id
+          nombre
+        }
+      }
       success
       message
     }

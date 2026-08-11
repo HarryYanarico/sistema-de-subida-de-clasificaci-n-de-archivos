@@ -530,3 +530,105 @@ Esperar ver en Docker Desktop:
 - `subida-arquitectura-minio-1` (puerto 9001 para consola)
 - `subida-arquitectura-backend-1` (puerto 8000)
 - `subida-arquitectura-frontend-1` (puerto 5173)
+
+---
+
+## FASE 11: Docker Compose — Fix apt-get ✅ COMPLETADA
+
+### Problema
+El `docker compose up --build` fallaba porque `apt-get update` no podía conectarse a los repositorios de Debian dentro del contenedor.
+
+### Causa raíz
+La dependencia `psycopg2-binary` ya trae binarios pre-compilados. No se necesitaba `gcc` ni `libpq-dev`.
+
+### Cambio realizado
+
+| Archivo | Cambio |
+|---|---|
+| `subida-arquitectura/docker/backend/Dockerfile` | Eliminar capa `RUN apt-get update && apt-get install -y gcc libpq-dev` |
+
+---
+
+## FASE 12: Frontend — Corrección de Rutas ✅ COMPLETADA
+
+### Problema
+Múltiples navegaciones en el frontend usaban rutas que no existían, causando redirecciones al Dashboard.
+
+### Errores encontrados y corregidos
+
+| # | Archivo | Línea | Ruta incorrecta | Ruta correcta |
+|---|---|---|---|---|
+| 1 | `Dashboard.tsx` | 82 | `/personas/nueva` | `/personas/registrar` |
+| 2 | `Dashboard.tsx` | 113 | `/personas/${id}` | `/personas/${id}/casillero` |
+| 3 | `ListaPersonas.tsx` | 33 | `/personas/nueva` | `/personas/registrar` |
+| 4 | `ListaPersonas.tsx` | 99 | `/personas/${id}` | `/personas/${id}/casillero` |
+| 5 | `SubirDocumentos.tsx` | 281 | `/personas/${id}` | `/personas/${id}/casillero` |
+| 6 | `DocumentosPendientes.tsx` | 121 | `/personas/${id}` | `/personas/${id}/casillero` |
+| 7 | `routes.tsx` | 20 | `/personas/lista` | `/vista-persona` |
+| 8 | `routes.tsx` | 21 | `/personas/:id/documentos` | `/vista-persona/:id` |
+
+### Otros fixes
+
+| Archivo | Cambio |
+|---|---|
+| `UnidadContext.tsx:3` | Import roto: `../../graphql/queries/unidades` → `@/graphql/queries/unidades` |
+| `App.tsx` | Eliminar `BrowserRouter` y `UnidadProvider` duplicados (ya están en `main.tsx`) |
+| `App.tsx` | Restaurar `Layout` wrapper para páginas (excepto `/login`) |
+
+---
+
+## FASE 13: Gemini SDK — Migración a google-genai ✅ COMPLETADA
+
+### Problema
+El SDK `google-generativeai` está descontinuado (soporte terminó Nov 2025). El modelo `gemini-2.0-flash` ya no está disponible.
+
+### Cambios realizados
+
+| Archivo | Cambio |
+|---|---|
+| `requirements/base.txt` | `google-generativeai==0.8.4` → `google-genai>=1.0.0` |
+| `apps/storage/ai_classifier.py` | Reescribir `_configure()` usando `genai.Client()` |
+| `apps/storage/ai_classifier.py` | `self.model.generate_content()` → `self.client.models.generate_content()` |
+| `apps/storage/ai_classifier.py` | Modelo: `gemini-2.0-flash` → `gemini-3.6-flash` |
+
+---
+
+## FASE 14: IA — Creación Automática de Tipos de Documento ✅ COMPLETADA
+
+### Descripción
+Cuando la IA sugiere que un documento es de un tipo nuevo, el usuario puede crear el tipo directamente desde el dialog de sugerencia, sin ir a Configuración.
+
+### Flujo nuevo
+
+| Paso | Qué ocurre |
+|------|-----------|
+| 1 | User clickea "Sugerir IA" en un documento |
+| 2 | Gemini devuelve: `es_nuevo_tipo=true`, nombre sugerido, keywords sugeridas |
+| 3 | Dialog muestra campo editable con el nombre sugerido |
+| 4 | User clickea **"Crear tipo y asignar"** |
+| 5 | Se crea el `TipoDocumento` automáticamente |
+| 6 | Se asigna el documento al nuevo tipo |
+| 7 | Se hace `reclasificar_todos()` para documentos similares |
+
+### Cambios realizados
+
+**Backend:**
+
+| Archivo | Cambio |
+|---|---|
+| `apps/storage/ai_classifier.py` | Prompt actualizado para pedir `NOMBRE_NUEVO` cuando es tipo nuevo |
+| `apps/storage/ai_classifier.py` | `suggest_classification()` retorna `nombre_sugerido` |
+| `apps/documentos/mutations.py` | `SugerirClasificacionIA` retorna `nombre_sugerido` |
+| `apps/documentos/mutations.py` | Nueva mutation `CrearYAsignarTipoIA` |
+| `apps/documentos/mutations.py` | `CrearYAsignarTipoIA`注册在 Mutation ObjectType |
+
+**Frontend:**
+
+| Archivo | Cambio |
+|---|---|
+| `graphql/mutations/documentos.ts` | `SUGERIR_CLASIFICACION_IA` incluye `nombreSugerido` |
+| `graphql/mutations/documentos.ts` | Nueva mutation `CREAR_Y_ASIGNAR_TIPO_IA` |
+| `CasilleroDocumentos.tsx` | Import `CREAR_Y_ASIGNAR_TIPO_IA` |
+| `CasilleroDocumentos.tsx` | State `nombreNuevoTipo` y `loadingCrearTipo` |
+| `CasilleroDocumentos.tsx` | Función `handleCrearYAsignar()` |
+| `CasilleroDocumentos.tsx` | Dialog: campo editable nombre + botón "Crear tipo y asignar" |

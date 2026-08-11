@@ -79,7 +79,7 @@ export function Dashboard() {
             <CardTitle>Acciones Rápidas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Link to="/personas/nueva" className="block">
+            <Link to="/personas/registrar" className="block">
               <Button variant="outline" className="w-full justify-start">
                 <Users className="h-4 w-4 mr-2" />
                 Registrar Nueva Persona
@@ -110,7 +110,7 @@ export function Dashboard() {
                 {data.personas.items.slice(0, 5).map((persona: any) => (
                   <Link
                     key={persona.id}
-                    to={`/personas/${persona.id}`}
+                    to={`/personas/${persona.id}/casillero`}
                     className="flex items-center justify-between p-2 rounded-md hover:bg-accent"
                   >
                     <div>
