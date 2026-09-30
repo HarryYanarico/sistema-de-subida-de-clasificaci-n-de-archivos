@@ -22,6 +22,7 @@ export interface Persona {
   total_documentos?: number;
   documentos_clasificados?: number;
   porcentaje_completado?: number;
+  tiene_documentos_clasificados?: boolean;
 }
 
 export interface Unidad {

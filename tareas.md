@@ -632,3 +632,90 @@ Cuando la IA sugiere que un documento es de un tipo nuevo, el usuario puede crea
 | `CasilleroDocumentos.tsx` | State `nombreNuevoTipo` y `loadingCrearTipo` |
 | `CasilleroDocumentos.tsx` | Función `handleCrearYAsignar()` |
 | `CasilleroDocumentos.tsx` | Dialog: campo editable nombre + botón "Crear tipo y asignar" |
+
+---
+
+## FASE 15: Bugs Críticos y de Lógica del Frontend ⏸ PENDIENTE (no ejecutada)
+
+> Alcance acordado: SOLO bugs críticos y de lógica. Excluye limpieza de código muerto y
+> funcionalidades nuevas (stats de Dashboard, etc.). No ejecutar aún.
+
+### 15.A Fix crítico del login
+
+**Problema:** `Login.tsx` recibe `onLogin` por props y lo llama en línea 32, pero `routes.tsx:15`
+lo renderiza como `<Login />` sin pasar la prop. Al autenticarse bien: se guarda el token en
+localStorage, `onLogin()` lanza `TypeError`, y el `catch` en línea 36 muestra "Error de conexión".
+
+| Archivo | Cambio |
+|---|---|
+| `Login.tsx` | Quitar prop `onLogin` e `interface LoginProps`; usar `useNavigate()` → `navigate('/')` tras login exitoso |
+
+### 15.B AuthContext + guardas de ruta
+
+**Problema:** `shared/guards/` está vacía; cualquier ruta es accesible sin token (solo se oculta el
+`Layout` en `/login`). La guarda es de UX: el backend sigue sin validar el Bearer token (deuda
+conocida, no se toca en este alcance).
+
+| Archivo | Cambio |
+|---|---|
+| `shared/contexts/AuthContext.tsx` | **Nuevo** — expone `user`, `token`, `login()`, `logout()`; persiste en localStorage |
+| `shared/guards/ProtectedRoute.tsx` | **Nuevo** — sin token redirige a `/login`; en `/login` con token redirige a `/` |
+| `main.tsx` | Envolver con `<AuthProvider>` |
+| `App.tsx` | Usar `useAuth()`; envolver rutas con `ProtectedRoute`; eliminar lógica manual de logout |
+| `Layout.tsx` | Usar `useAuth().logout()` en vez de la prop `onLogout` |
+
+### 15.C Casillero — unidad de la persona
+
+**Problema:** `CasilleroDocumentos.tsx:35-38` carga `GET_TIPOS_DOCUMENTO` con `unidadActiva`, pero la
+persona puede pertenecer a otra unidad. Al cambiar de unidad, el casillero muestra tipos equivocados.
+
+| Archivo | Cambio |
+|---|---|
+| `backend/apps/personas/schema.py` | Agregar `'unidad'` a los campos de `PersonaType` |
+| `shared/graphql/queries/personas.ts` | `GET_PERSONA`: agregar `unidad { id }` |
+| `CasilleroDocumentos.tsx` | Usar `persona.unidad.id` para `GET_TIPOS_DOCUMENTO` (skip hasta que persona cargue) |
+
+### 15.D Casillero — múltiples documentos por tipo
+
+**Problema:** `CasilleroDocumentos.tsx:57-59` (`getDocumentoForTipo`) devuelve solo el PRIMER
+documento de cada tipo. El requerimiento pide soportar varias páginas del mismo tipo (ej. libreta
+escolar de 6º/5º/4º); las páginas extra quedan ocultas.
+
+| Archivo | Cambio |
+|---|---|
+| `CasilleroDocumentos.tsx` | Reemplazar `getDocumentoForTipo` por agrupación `tipo → Documento[]`; renderizar TODAS las páginas por tipo (thumbnail principal + contador "+N" o mini-cards apiladas); mantener visor/IA/asignar por cada documento |
+
+### 15.E Dashboard — "Últimas Personas Registradas" no es real
+
+**Problema:** `Dashboard.tsx:110-124` muestra página 1 (limit 10) ordenada por `codigo`
+(`personas/models.py` ordering), no por fecha de creación.
+
+| Archivo | Cambio |
+|---|---|
+| `backend/apps/personas/schema.py` | Agregar argumento `orderBy` a `resolve_personas` (whitelist segura: `codigo`, `-codigo`, `created_at`, `-created_at`, `nombres`, `-nombres`) |
+| `shared/graphql/queries/personas.ts` | `GET_PERSONAS`: variable opcional `$orderBy: String` |
+| `Dashboard.tsx` | Pasar `orderBy: '-created_at'` en el card de últimas personas |
+
+> Las 3 tarjetas `--` del Dashboard quedan fuera de alcance (requieren resolver `stats(unidadId)`
+> nuevo → feature).
+
+### 15.F SubirDocumentos — bloquear nombres inválidos
+
+**Problema:** `SubirDocumentos.tsx:209-239` marca "Nombre inválido" pero el botón de subida (línea
+310) no se deshabilita ni filtra; el backend rechaza los inválidos con error.
+
+| Archivo | Cambio |
+|---|---|
+| `SubirDocumentos.tsx` | Deshabilitar botón si hay nombres inválidos y mostrar aviso; filtrar inválidos antes de enviar |
+
+### 15.G Triviales
+
+| Archivo | Cambio |
+|---|---|
+| `DocumentosPendientes.tsx` | Try/catch + loading por fila en `handleAsignar` (`:34-42`) |
+| `Unidades.tsx` | Corregir confirmación de borrado: "Se eliminará permanentemente" (no "Se desactivará") |
+
+### Verificación
+
+- Frontend: `npm run build` (tsc + vite) y `npm run lint`.
+- Backend: `python manage.py check` (sin cambios de modelo → sin migraciones).
