@@ -38,5 +38,31 @@ services:
     depends_on:
       - backend
 
+  # Sincronizacion periodica de Drive -> MinIO. Comentarlo para dejar solo
+  # la sincronizacion manual. Requiere aplicar migraciones primero:
+  #   docker compose exec backend python manage.py migrate
+  scheduler:
+    build:
+      context: ../subida-backend
+      dockerfile: ../subida-arquitectura/docker/backend/Dockerfile
+    # El exec final es necesario: sin el, sh queda como PID 1, no reenvia
+    # SIGTERM a Python y el contenedor muere por SIGKILL al vencer el timeout
+    # de `docker compose stop`.
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             exec python manage.py sincronizar_periodico"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=host.docker.internal
+      - MINIO_ENDPOINT=http://minio:9000
+      - SYNC_INTERVAL_MINUTOS=${SYNC_INTERVAL_MINUTOS:-240}
+    depends_on:
+      minio:
+        condition: service_started
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   minio_data:
