@@ -76,6 +76,10 @@ class Documento(models.Model):
     pagina_numero = models.IntegerField()
     texto_extraido = models.TextField(blank=True, default='')
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
+    origen_id = models.CharField(
+        max_length=500, null=True, blank=True, db_index=True,
+        help_text="Identificador del archivo en el proveedor de origen (evita reimportar)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -88,3 +92,80 @@ class Documento(models.Model):
     def __str__(self):
         tipo = self.tipo_documento.nombre if self.tipo_documento else 'Sin clasificar'
         return f"{self.persona.codigo} - Pág {self.pagina_numero} - {tipo}"
+
+
+class OrigenArchivos(models.Model):
+    TIPO_CHOICES = [
+        ('google_drive', 'Google Drive'),
+        ('s3', 'Almacenamiento S3 compatible'),
+        ('onedrive', 'OneDrive / SharePoint'),
+        ('carpeta', 'Carpeta local o de red'),
+    ]
+
+    unidad = models.OneToOneField(
+        'unidades.Unidad', on_delete=models.CASCADE, related_name='origen_archivos'
+    )
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='google_drive')
+    identificador = models.CharField(
+        max_length=500, blank=True, default='',
+        help_text="Carpeta de Drive, o bucket/prefijo S3, o ruta local"
+    )
+    drive_compartido = models.BooleanField(
+        default=False,
+        help_text="Marcar si el identificador es un Drive compartido y no una Drive personal"
+    )
+    credencial_ref = models.CharField(
+        max_length=255, blank=True, default='',
+        help_text="Alias del secreto (ruta del JSON o variable de entorno). Nunca la clave en sí"
+    )
+    activo = models.BooleanField(default=True)
+    marca_tiempo = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Última modificación importada. Solo se usa como pre-filtro"
+    )
+    ultima_sincronizacion = models.DateTimeField(null=True, blank=True)
+    ultimo_error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'origen_archivos'
+        verbose_name = 'origen de archivos'
+        verbose_name_plural = 'origenes de archivos'
+
+    def __str__(self):
+        return f'{self.unidad} ({self.get_tipo_display()})'
+
+
+class Sincronizacion(models.Model):
+    ESTADO_CHOICES = [
+        ('exitosa', 'Exitosa'),
+        ('con_errores', 'Con errores'),
+        ('fallida', 'Fallida'),
+    ]
+
+    origen = models.ForeignKey(
+        OrigenArchivos, on_delete=models.CASCADE, related_name='sincronizaciones'
+    )
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='exitosa')
+    iniciada_en = models.DateTimeField(auto_now_add=True)
+    encontrada = models.IntegerField(default=0)
+    procesados = models.IntegerField(default=0)
+    omitidos_ya_importados = models.IntegerField(default=0)
+    omitidos_sin_codigo = models.IntegerField(default=0)
+    omitidos_sin_persona = models.IntegerField(default=0)
+    omitidos_tamano = models.IntegerField(default=0)
+    omitidos_no_pdf = models.IntegerField(default=0)
+    paginas = models.IntegerField(default=0)
+    errores = models.IntegerField(default=0)
+    mensaje = models.TextField(blank=True, default='')
+    detalle = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = 'sincronizaciones'
+        ordering = ['-iniciada_en']
+        verbose_name = 'sincronización'
+        verbose_name_plural = 'sincronizaciones'
+
+    def __str__(self):
+        return f'{self.origen} - {self.iniciada_en:%Y-%m-%d %H:%M} - {self.get_estado_display()}'

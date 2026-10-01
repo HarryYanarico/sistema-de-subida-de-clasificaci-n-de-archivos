@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'apps.unidades',
     'apps.personas',
     'apps.documentos',
+    'apps.storage',
 ]
 
 MIDDLEWARE = [
