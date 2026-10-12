@@ -8,18 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Search, ChevronRight } from 'lucide-react'
-import { useUnidad } from '@/contexts/UnidadContext'
 
 export function VistaPersonaLista() {
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const limit = 10
-  const { unidadActiva } = useUnidad()
 
   const { data, loading } = useQuery(GET_PERSONAS, {
-    variables: { unidadId: Number(unidadActiva?.id) || 0, search, page, limit },
-    skip: !unidadActiva,
+    variables: { search, page, limit },
   })
 
   const personas = data?.personas?.items || []

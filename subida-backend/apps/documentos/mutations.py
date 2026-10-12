@@ -1,85 +1,176 @@
-import graphene
 import re
+from typing import Optional
+
+import strawberry
+
 from .models import TipoDocumento, Documento
 from .schema import TipoDocumentoType, DocumentoType
 
 
 def clasificar_documento(doc):
-    unidad = doc.persona.unidad
-    texto_lower = doc.texto_extraido.lower()
-    mejor_tipo = None
-    max_score = 0
+    """Reclasifica un documento con el clasificador local.
 
-    for tipo in TipoDocumento.objects.filter(unidad=unidad, activo=True):
-        score = 0
-        for palabra, peso in tipo.lista_palabras_clave_con_pesos:
-            if palabra in texto_lower:
-                score += peso
+    Delega en `apps.storage.clasificador` para que la ingesta y esta mutation
+    compartan exactamente el mismo criterio: si divergen, los documentos
+    reclasificados desde el admin quedan con un criterio distinto al automatico.
+    """
+    from apps.storage.clasificador import clasificar, estado_desde_resultado
 
-        if score > max_score:
-            max_score = score
-            mejor_tipo = tipo
+    tipos = TipoDocumento.objects.filter(activo=True)
 
-    if mejor_tipo and max_score > 0:
-        doc.tipo_documento = mejor_tipo
-        doc.estado = 'clasificado'
-    else:
-        doc.tipo_documento = None
-        doc.estado = 'pendiente'
+    resultado = clasificar(doc.texto_extraido, tipos)
+
+    doc.tipo_documento = resultado.tipo_ganador
+    doc.estado = estado_desde_resultado(resultado)
+    doc.score = resultado.score_ganador or None
+    doc.keywords_matcheadas = resultado.keywords_matcheadas
     doc.save()
 
 
-def reclasificar_todos(unidad=None):
-    qs = Documento.objects.exclude(texto_extraido='')
-    if unidad:
-        qs = qs.filter(persona__unidad=unidad)
+def reclasificar_todos():
+    # Los duplicados se saltan: reclasificarlos no cambia el hecho de que son
+    # una copia, y hacerlos reaparecer en la cola seria revisar dos veces lo mismo.
+    qs = Documento.objects.exclude(texto_extraido='').exclude(estado='duplicado')
     for doc in qs:
         clasificar_documento(doc)
 
 
-class CreateTipoDocumento(graphene.Mutation):
-    class Arguments:
-        unidad_id = graphene.Int(required=True)
-        nombre = graphene.String(required=True)
-        palabras_clave = graphene.String(required=True)
+def registrar_reclasificacion(doc, tipo_anterior, tipo_nuevo, usuario=None):
+    """Deja rastro de una correccion humana en `historial_clasificacion`.
 
-    tipo_documento = graphene.Field(TipoDocumentoType)
-    success = graphene.Boolean()
-    message = graphene.String()
+    Es lo unico que permite reconstruir por que un documento quedo como quedo:
+    el estado actual no distingue "el clasificador lo dijo" de "alguien lo confirmo".
+    """
+    from django.utils import timezone
 
-    def mutate(self, info, unidad_id, nombre, palabras_clave):
+    entrada = {
+        'fecha': timezone.now().isoformat(),
+        'usuario': getattr(usuario, 'username', None),
+        'estado_anterior': doc.estado,
+        'tipo_anterior': tipo_anterior.nombre if tipo_anterior else None,
+        'tipo_nuevo': tipo_nuevo.nombre if tipo_nuevo else None,
+        'score_anterior': doc.score,
+        'keywords_anteriores': doc.keywords_matcheadas,
+    }
+
+    historial = list(doc.historial_clasificacion or [])
+    historial.append(entrada)
+    doc.historial_clasificacion = historial
+    return entrada
+
+
+def _usuario_de(info):
+    """Usuario de la peticion, o None si GraphQL no lo proveyo.
+
+    El login actual emite un token que el backend no valida
+    (`token=f"token-{user.id}"` en apps/users/schema.py), asi que hoy esto casi
+    siempre devuelve None y el historial queda sin autor. El campo queda
+    listo: en cuanto haya sesion real, el nombre aparece sin tocar el log.
+    """
+    request = getattr(info, 'context', None)
+    if request is None:
+        return None
+
+    user = getattr(request, 'user', None)
+    if user is None or not getattr(user, 'is_authenticated', False):
+        return None
+
+    return user
+
+
+def _limpiar_obligatorias(valores):
+    """Normaliza la lista de obligatorias: strings limpios, sin vacios, sin repetidos."""
+    if not valores:
+        return []
+    return sorted({v.strip() for v in valores if v and v.strip()})
+
+
+def _slug_de(nombre):
+    return re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
+
+
+@strawberry.type
+class CreateTipoDocumento:
+    tipo_documento: Optional[TipoDocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class UpdateTipoDocumento:
+    tipo_documento: Optional[TipoDocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class DeleteTipoDocumento:
+    success: bool
+    message: str
+
+
+@strawberry.type
+class AsignarDocumento:
+    documento: Optional[DocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class ClasificarDocumento:
+    documento: Optional[DocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class CrearYAsignarTipo:
+    tipo_documento: Optional[TipoDocumentoType]
+    documento: Optional[DocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class ReclasificarDocumento:
+    documento: Optional[DocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class Mutation:
+    @strawberry.mutation
+    def create_tipo_documento(
+        self,
+        nombre: str,
+        palabras_clave: str,
+        keywords_obligatorias: Optional[list[str]] = None,
+    ) -> CreateTipoDocumento:
         try:
-            from apps.unidades.models import Unidad
-            unidad = Unidad.objects.filter(id=unidad_id).first()
-            if not unidad:
-                return CreateTipoDocumento(tipo_documento=None, success=False, message="Unidad no encontrada")
-            slug = re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
-            if TipoDocumento.objects.filter(slug=slug, unidad=unidad).exists():
-                return CreateTipoDocumento(tipo_documento=None, success=False, message="Ya existe un tipo con ese nombre en esta unidad")
+            slug = _slug_de(nombre)
+            if TipoDocumento.objects.filter(slug=slug).exists():
+                return CreateTipoDocumento(tipo_documento=None, success=False, message="Ya existe un tipo con ese nombre")
             tipo = TipoDocumento.objects.create(
-                unidad=unidad,
                 nombre=nombre,
                 slug=slug,
                 palabras_clave=palabras_clave,
+                keywords_obligatorias=_limpiar_obligatorias(keywords_obligatorias),
             )
-            reclasificar_todos(unidad=unidad)
+            reclasificar_todos()
             return CreateTipoDocumento(tipo_documento=tipo, success=True, message="Tipo de documento creado")
         except Exception as e:
             return CreateTipoDocumento(tipo_documento=None, success=False, message=str(e))
 
-
-class UpdateTipoDocumento(graphene.Mutation):
-    class Arguments:
-        id = graphene.Int(required=True)
-        nombre = graphene.String()
-        palabras_clave = graphene.String()
-        activo = graphene.Boolean()
-
-    tipo_documento = graphene.Field(TipoDocumentoType)
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, id, nombre=None, palabras_clave=None, activo=None):
+    @strawberry.mutation
+    def update_tipo_documento(
+        self,
+        id: int,
+        nombre: Optional[str] = None,
+        palabras_clave: Optional[str] = None,
+        keywords_obligatorias: Optional[list[str]] = None,
+        activo: Optional[bool] = None,
+    ) -> UpdateTipoDocumento:
         try:
             tipo = TipoDocumento.objects.filter(id=id).first()
             if not tipo:
@@ -88,22 +179,20 @@ class UpdateTipoDocumento(graphene.Mutation):
                 tipo.nombre = nombre
             if palabras_clave is not None:
                 tipo.palabras_clave = palabras_clave
+            if keywords_obligatorias is not None:
+                tipo.keywords_obligatorias = _limpiar_obligatorias(keywords_obligatorias)
             if activo is not None:
                 tipo.activo = activo
             tipo.save()
+            # Cambiar las palabras cambia el resultado de clasificacion: hay que
+            # reevaluar los documentos que quedaron 'sin_clasificar' o 'dudosa'.
+            reclasificar_todos()
             return UpdateTipoDocumento(tipo_documento=tipo, success=True, message="Tipo actualizado")
         except Exception as e:
             return UpdateTipoDocumento(tipo_documento=None, success=False, message=str(e))
 
-
-class DeleteTipoDocumento(graphene.Mutation):
-    class Arguments:
-        id = graphene.Int(required=True)
-
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, id):
+    @strawberry.mutation
+    def delete_tipo_documento(self, id: int) -> DeleteTipoDocumento:
         try:
             tipo = TipoDocumento.objects.filter(id=id).first()
             if not tipo:
@@ -114,17 +203,8 @@ class DeleteTipoDocumento(graphene.Mutation):
         except Exception as e:
             return DeleteTipoDocumento(success=False, message=str(e))
 
-
-class AsignarDocumento(graphene.Mutation):
-    class Arguments:
-        documento_id = graphene.Int(required=True)
-        tipo_documento_id = graphene.Int(required=True)
-
-    documento = graphene.Field(DocumentoType)
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, documento_id, tipo_documento_id):
+    @strawberry.mutation
+    def asignar_documento(self, documento_id: int, tipo_documento_id: int) -> AsignarDocumento:
         try:
             doc = Documento.objects.filter(id=documento_id).first()
             if not doc:
@@ -139,16 +219,8 @@ class AsignarDocumento(graphene.Mutation):
         except Exception as e:
             return AsignarDocumento(documento=None, success=False, message=str(e))
 
-
-class ClasificarDocumento(graphene.Mutation):
-    class Arguments:
-        documento_id = graphene.Int(required=True)
-
-    documento = graphene.Field(DocumentoType)
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, documento_id):
+    @strawberry.mutation
+    def clasificar_documento(self, documento_id: int) -> ClasificarDocumento:
         try:
             doc = Documento.objects.filter(id=documento_id).first()
             if not doc:
@@ -166,108 +238,79 @@ class ClasificarDocumento(graphene.Mutation):
         except Exception as e:
             return ClasificarDocumento(documento=None, success=False, message=str(e))
 
+    @strawberry.mutation
+    def reclasificar_documento(
+        self, documento_id: int, tipo_documento_id: int, info=None
+    ) -> ReclasificarDocumento:
+        """Correccion humana de una pagina mal clasificada.
 
-class SugerirClasificacionIA(graphene.Mutation):
-    class Arguments:
-        documento_id = graphene.Int(required=True)
-
-    tipo_sugerido = graphene.Field(TipoDocumentoType)
-    palabras_clave_sugeridas = graphene.String()
-    es_nuevo_tipo = graphene.Boolean()
-    nombre_sugerido = graphene.String()
-    raw_response = graphene.String()
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, documento_id):
+        A diferencia de `asignarDocumento`, aqui el estado pasa a 'verificado':
+        asignar es un pase automatico que el clasificador puede volver a
+        deshacer en la proxima reclasificacion; verificar es la decision final
+        de una persona, y por eso limpia el score local (que ya no describe el
+        resultado) y deja el score anterior asentado en el log.
+        """
         try:
-            from apps.storage.ai_classifier import GeminiClassifier
-
             doc = Documento.objects.filter(id=documento_id).first()
             if not doc:
-                return SugerirClasificacionIA(success=False, message="Documento no encontrado")
+                return ReclasificarDocumento(
+                    documento=None, success=False, message="Documento no encontrado")
 
-            if not doc.texto_extraido or len(doc.texto_extraido.strip()) < 20:
-                return SugerirClasificacionIA(success=False, message="El documento no tiene texto extraído suficiente")
+            tipo = TipoDocumento.objects.filter(id=tipo_documento_id).first()
+            if not tipo:
+                return ReclasificarDocumento(
+                    documento=None, success=False, message="Tipo de documento no encontrado")
 
-            unidad = doc.persona.unidad
-            tipos_qs = TipoDocumento.objects.filter(unidad=unidad, activo=True)
-            tipos = [{'id': t.id, 'nombre': t.nombre, 'slug': t.slug} for t in tipos_qs]
+            usuario = _usuario_de(info)
 
-            classifier = GeminiClassifier()
-            if not classifier.is_available:
-                return SugerirClasificacionIA(success=False, message="Gemini IA no está configurado. Verifica GEMINI_API_KEY")
+            registrar_reclasificacion(doc, doc.tipo_documento, tipo, usuario)
 
-            result = classifier.suggest_classification(doc.texto_extraido, tipos)
+            doc.tipo_documento = tipo
+            doc.estado = 'verificado'
+            doc.score = None
+            # Keywords y phash tambien son del intento fallido: dejarlos
+            # mentiria sobre por que el documento esta en la cola.
+            doc.keywords_matcheadas = []
+            doc.duplicado_de = None
+            doc.save()
 
-            tipo_sugerido_instance = None
-            if result.get('tipo_sugerido'):
-                tipo_sugerido_instance = tipos_qs.filter(id=result['tipo_sugerido']['id']).first()
-
-            return SugerirClasificacionIA(
-                tipo_sugerido=tipo_sugerido_instance,
-                palabras_clave_sugeridas=result['palabras_clave'],
-                es_nuevo_tipo=result.get('es_nuevo_tipo', False),
-                nombre_sugerido=result.get('nombre_sugerido', ''),
-                raw_response=result.get('raw_response', ''),
-                success=True,
-                message="Sugerencia generada correctamente",
-            )
-
+            return ReclasificarDocumento(
+                documento=doc, success=True,
+                message=f"Verificado como {tipo.nombre}")
         except Exception as e:
-            return SugerirClasificacionIA(success=False, message=str(e))
+            return ReclasificarDocumento(
+                documento=None, success=False, message=str(e))
 
-
-class CrearYAsignarTipoIA(graphene.Mutation):
-    class Arguments:
-        documento_id = graphene.Int(required=True)
-        nombre = graphene.String(required=True)
-        palabras_clave = graphene.String(required=True)
-
-    tipo_documento = graphene.Field(TipoDocumentoType)
-    documento = graphene.Field(DocumentoType)
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, documento_id, nombre, palabras_clave):
+    @strawberry.mutation
+    def crear_y_asignar_tipo(self, documento_id: int, nombre: str, palabras_clave: str) -> CrearYAsignarTipo:
         try:
             doc = Documento.objects.filter(id=documento_id).first()
             if not doc:
-                return CrearYAsignarTipoIA(tipo_documento=None, documento=None, success=False, message="Documento no encontrado")
+                return CrearYAsignarTipo(
+                    tipo_documento=None, documento=None, success=False, message="Documento no encontrado"
+                )
 
-            unidad = doc.persona.unidad
-            slug = re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
+            slug = _slug_de(nombre)
 
-            if TipoDocumento.objects.filter(slug=slug, unidad=unidad).exists():
-                tipo = TipoDocumento.objects.filter(slug=slug, unidad=unidad).first()
+            if TipoDocumento.objects.filter(slug=slug).exists():
+                tipo = TipoDocumento.objects.filter(slug=slug).first()
             else:
                 tipo = TipoDocumento.objects.create(
-                    unidad=unidad,
                     nombre=nombre,
                     slug=slug,
                     palabras_clave=palabras_clave,
                 )
-                reclasificar_todos(unidad=unidad)
+                reclasificar_todos()
 
             doc.tipo_documento = tipo
             doc.estado = 'clasificado'
             doc.save()
 
-            return CrearYAsignarTipoIA(
+            return CrearYAsignarTipo(
                 tipo_documento=tipo,
                 documento=doc,
                 success=True,
                 message=f"Tipo '{nombre}' creado y documento asignado correctamente",
             )
         except Exception as e:
-            return CrearYAsignarTipoIA(tipo_documento=None, documento=None, success=False, message=str(e))
-
-
-class Mutation(graphene.ObjectType):
-    create_tipo_documento = CreateTipoDocumento.Field()
-    update_tipo_documento = UpdateTipoDocumento.Field()
-    delete_tipo_documento = DeleteTipoDocumento.Field()
-    asignar_documento = AsignarDocumento.Field()
-    clasificar_documento = ClasificarDocumento.Field()
-    sugerir_clasificacion_ia = SugerirClasificacionIA.Field()
-    crear_y_asignar_tipo_ia = CrearYAsignarTipoIA.Field()
+            return CrearYAsignarTipo(tipo_documento=None, documento=None, success=False, message=str(e))

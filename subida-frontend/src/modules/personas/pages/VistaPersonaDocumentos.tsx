@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Printer, X, FileText, User, CreditCard, Maximize2 } from 'lucide-react'
+import { EstadoDocumentoBadge } from '../../revision/components/EstadoDocumentoBadge'
 
 export function VistaPersonaDocumentos() {
   const { id } = useParams<{ id: string }>()
@@ -101,10 +102,17 @@ export function VistaPersonaDocumentos() {
                 </div>
               </div>
               <div className="p-3 border-t">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium truncate">{doc.tipoDocumento.nombre}</span>
-                  <Badge variant="success" className="text-xs flex-shrink-0 ml-2">Pág. {doc.paginaNumero}</Badge>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium truncate">{doc.tipoDocumento?.nombre || '—'}</span>
+                  <Badge variant="success" className="text-xs flex-shrink-0">Pág. {doc.paginaNumero}</Badge>
                 </div>
+                {/* Un duplicado no es un documento mas: se marca para que la
+                    persona sepa que esa pagina ya estaba en el expediente. */}
+                {doc.estado && doc.estado !== 'clasificado' && (
+                  <div className="mt-2">
+                    <EstadoDocumentoBadge estado={doc.estado} />
+                  </div>
+                )}
               </div>
             </div>
           ))}

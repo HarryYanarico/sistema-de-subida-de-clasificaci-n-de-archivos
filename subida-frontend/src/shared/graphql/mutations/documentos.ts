@@ -2,12 +2,10 @@ import { gql } from '@apollo/client';
 
 export const CREATE_TIPO_DOCUMENTO = gql`
   mutation CreateTipoDocumento(
-    $unidadId: Int!
     $nombre: String!
     $palabrasClave: String!
   ) {
     createTipoDocumento(
-      unidadId: $unidadId
       nombre: $nombre
       palabrasClave: $palabrasClave
     ) {
@@ -92,31 +90,44 @@ export const CLASIFICAR_DOCUMENTO = gql`
   }
 `;
 
-export const SUGERIR_CLASIFICACION_IA = gql`
-  mutation SugerirClasificacionIA($documentoId: Int!) {
-    sugerirClasificacionIa(documentoId: $documentoId) {
-      tipoSugerido {
+export const RECLASIFICAR_DOCUMENTO = gql`
+  mutation ReclasificarDocumento($documentoId: Int!, $tipoDocumentoId: Int!) {
+    reclasificarDocumento(
+      documentoId: $documentoId
+      tipoDocumentoId: $tipoDocumentoId
+    ) {
+      documento {
         id
-        nombre
-        slug
+        estado
+        score
+        keywordsMatcheadas
+        historialClasificacion {
+          fecha
+          usuario
+          estado_anterior
+          tipo_anterior
+          tipo_nuevo
+          score_anterior
+          keywords_anteriores
+        }
+        tipoDocumento {
+          id
+          nombre
+        }
       }
-      palabrasClaveSugeridas
-      esNuevoTipo
-      nombreSugerido
-      rawResponse
       success
       message
     }
   }
 `;
 
-export const CREAR_Y_ASIGNAR_TIPO_IA = gql`
-  mutation CrearYAsignarTipoIA(
+export const CREAR_Y_ASIGNAR_TIPO = gql`
+  mutation CrearYAsignarTipo(
     $documentoId: Int!
     $nombre: String!
     $palabrasClave: String!
   ) {
-    crearYAsignarTipoIa(
+    crearYAsignarTipo(
       documentoId: $documentoId
       nombre: $nombre
       palabrasClave: $palabrasClave

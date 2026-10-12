@@ -1,26 +1,41 @@
-import graphene
-from graphene_django import DjangoObjectType
+from typing import Optional
+
+import strawberry
+import strawberry_django
 from django.contrib.auth import authenticate
+
 from .models import User
 
 
-class UserType(DjangoObjectType):
-    class Meta:
-        model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role', 'telefono')
+@strawberry_django.type(User, fields=['id', 'username', 'email', 'first_name', 'last_name', 'role', 'telefono'])
+class UserType:
+    pass
 
 
-class LoginUser(graphene.Mutation):
-    class Arguments:
-        username = graphene.String(required=True)
-        password = graphene.String(required=True)
+@strawberry.type
+class LoginUser:
+    user: Optional[UserType]
+    token: Optional[str]
+    success: bool
+    message: str
 
-    user = graphene.Field(UserType)
-    token = graphene.String()
-    success = graphene.Boolean()
-    message = graphene.String()
 
-    def mutate(self, info, username, password):
+@strawberry.type
+class CreateUser:
+    user: Optional[UserType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class Query:
+    pass
+
+
+@strawberry.type
+class Mutation:
+    @strawberry.mutation
+    def login_user(self, username: str, password: str) -> LoginUser:
         user = authenticate(username=username, password=password)
         if user is not None:
             return LoginUser(
@@ -36,22 +51,17 @@ class LoginUser(graphene.Mutation):
             message="Credenciales incorrectas"
         )
 
-
-class CreateUser(graphene.Mutation):
-    class Arguments:
-        username = graphene.String(required=True)
-        password = graphene.String(required=True)
-        email = graphene.String(required=True)
-        first_name = graphene.String(required=True)
-        last_name = graphene.String(required=True)
-        role = graphene.String()
-        telefono = graphene.String()
-
-    user = graphene.Field(UserType)
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, username, password, email, first_name, last_name, role='operador', telefono=''):
+    @strawberry.mutation
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        email: str,
+        first_name: str,
+        last_name: str,
+        role: Optional[str] = None,
+        telefono: Optional[str] = None,
+    ) -> CreateUser:
         try:
             user = User.objects.create_user(
                 username=username,
@@ -59,18 +69,9 @@ class CreateUser(graphene.Mutation):
                 email=email,
                 first_name=first_name,
                 last_name=last_name,
-                role=role,
-                telefono=telefono,
+                role=role or 'operador',
+                telefono=telefono or '',
             )
             return CreateUser(user=user, success=True, message="Usuario creado exitosamente")
         except Exception as e:
             return CreateUser(user=None, success=False, message=str(e))
-
-
-class Query(graphene.ObjectType):
-    pass
-
-
-class Mutation(graphene.ObjectType):
-    login_user = LoginUser.Field()
-    create_user = CreateUser.Field()

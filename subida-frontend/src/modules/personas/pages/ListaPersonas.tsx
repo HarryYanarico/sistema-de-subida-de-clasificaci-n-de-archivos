@@ -9,17 +9,14 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Eye } from 'lucide-react'
-import { useUnidad } from '@/contexts/UnidadContext'
 
 export function ListaPersonas() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const limit = 10
-  const { unidadActiva } = useUnidad()
 
   const { data, loading } = useQuery(GET_PERSONAS, {
-    variables: { unidadId: Number(unidadActiva?.id) || 0, search, page, limit },
-    skip: !unidadActiva,
+    variables: { search, page, limit },
   })
 
   const personas = data?.personas?.items || []

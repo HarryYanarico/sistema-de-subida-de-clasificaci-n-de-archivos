@@ -9,7 +9,7 @@ casillero digital. Context: UAGRM (Bolivia).
 | Capa | Tecnología |
 |---|---|
 | Frontend | React 18, Vite 5, TypeScript, TailwindCSS, shadcn/ui, Apollo Client, GraphQL |
-| Backend | Python 3.10, Django 4.2, Graphene (GraphQL), DRF, django-cors-headers |
+| Backend | Python 3.10, Django 4.2, Strawberry GraphQL, DRF, django-cors-headers |
 | Almacenamiento | MinIO (S3-compatible, boto3) para los PDFs |
 | Clasificación | PyMuPDF (extracción de texto) + Gemini (`google-genai`) |
 | Base de datos | **PostgreSQL nativo — NO corre en Docker** |
@@ -119,7 +119,7 @@ python manage.py runserver
 
 ```
 sistema-digitalizacion/
-├── subida-backend/                  # Django + Graphene
+├── subida-backend/                  # Django + Strawberry GraphQL
 │   ├── apps/
 │   │   ├── documentos/              # TipoDocumento, Documento, mutations, classifier
 │   │   ├── personas/                # Persona + casillero
@@ -165,6 +165,33 @@ sistema-digitalizacion/
 - **IA para crear tipos**: desde el diálogo de sugerencia se puede crear y
   asignar un tipo de documento nuevo y reclasificar.
 - **Revisión manual**: reasignar documentos mal clasificados y ver pendientes.
+
+## Tests
+
+```bash
+cd subida-backend
+python manage.py test apps.tests
+```
+
+63 tests sobre GraphQL, organizados en:
+
+| Archivo | Qué fija |
+|---|---|
+| `apps/tests/test_contrato.py` | Las 25 operaciones, sus argumentos y los campos de cada tipo; el POST a `/graphql/` |
+| `apps/tests/test_queries.py` | Las 8 queries contra la base de pruebas, incluidas relaciones anidadas |
+| `apps/tests/test_mutations.py` | Las 17 mutaciones y sus rutas de error |
+
+`test_contrato.py` es el que protege al frontend: un campo o argumento
+renombrado rompe Apollo en tiempo de ejecución, no en compilación.
+
+El SDL se regenera con:
+
+```bash
+python manage.py dump_graphql_schema -o ../docs/schema.graphql
+```
+
+`docs/schema.graphql.baseline` conserva el contrato de la era Graphene para
+poder comparar.
 
 ## Backup
 

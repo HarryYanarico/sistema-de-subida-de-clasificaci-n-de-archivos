@@ -11,21 +11,15 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { FileText, Printer, ChevronRight } from 'lucide-react'
-import { useUnidad } from '@/contexts/UnidadContext'
 
 export function DocumentosPendientes() {
   const [asignarDocumento] = useMutation(ASIGNAR_DOCUMENTO)
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
   const [showDialog, setShowDialog] = useState(false)
-  const { unidadActiva } = useUnidad()
 
-  const { data, loading, refetch } = useQuery(GET_DOCUMENTOS_PENDIENTES, {
-    variables: { unidadId: Number(unidadActiva?.id) || 0 },
-    skip: !unidadActiva,
-  })
+  const { data, loading, refetch } = useQuery(GET_DOCUMENTOS_PENDIENTES)
   const { data: tiposData } = useQuery(GET_TIPOS_DOCUMENTO, {
-    variables: { unidadId: Number(unidadActiva?.id) || 0, activo: true },
-    skip: !unidadActiva,
+    variables: { activo: true },
   })
 
   const documentos = data?.documentosPendientes || []

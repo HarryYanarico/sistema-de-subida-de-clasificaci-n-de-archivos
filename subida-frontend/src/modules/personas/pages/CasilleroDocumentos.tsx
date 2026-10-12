@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { GET_PERSONA } from '@/graphql/queries/personas'
 import { GET_DOCUMENTOS_PERSONA, GET_TIPOS_DOCUMENTO } from '@/graphql/queries/documentos'
-import { ASIGNAR_DOCUMENTO, SUGERIR_CLASIFICACION_IA, CREAR_Y_ASIGNAR_TIPO_IA } from '@/graphql/mutations/documentos'
+import { ASIGNAR_DOCUMENTO, CREAR_Y_ASIGNAR_TIPO } from '@/graphql/mutations/documentos'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { ArrowLeft, FileText, AlertCircle, User, Printer, Calendar, Mail, Phone, CreditCard, Sparkles, Loader2 } from 'lucide-react'
-import { useUnidad } from '@/contexts/UnidadContext'
+import { ArrowLeft, FileText, AlertCircle, User, Printer, Calendar, Mail, Phone, CreditCard, Plus, Loader2 } from 'lucide-react'
+import { EstadoDocumentoBadge } from '../../revision/components/EstadoDocumentoBadge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -22,7 +22,6 @@ export function CasilleroDocumentos() {
   const [asignarDocumento] = useMutation(ASIGNAR_DOCUMENTO)
   const [selectedDoc, setSelectedDoc] = useState<any>(null)
   const [showDialog, setShowDialog] = useState(false)
-  const { unidadActiva } = useUnidad()
 
   const { data: personaData, loading: loadingPersona } = useQuery(GET_PERSONA, {
     variables: { id: parseInt(id || '0') },
@@ -33,8 +32,7 @@ export function CasilleroDocumentos() {
   })
 
   const { data: tiposData } = useQuery(GET_TIPOS_DOCUMENTO, {
-    variables: { unidadId: Number(unidadActiva?.id) || 0, activo: true },
-    skip: !unidadActiva,
+    variables: { activo: true },
   })
 
   const persona = personaData?.persona
@@ -63,55 +61,36 @@ export function CasilleroDocumentos() {
     setShowDialog(true)
   }
 
-  const [sugerirIA] = useMutation(SUGERIR_CLASIFICACION_IA)
-  const [crearYAsignarTipo] = useMutation(CREAR_Y_ASIGNAR_TIPO_IA)
-  const [loadingSugerirId, setLoadingSugerirId] = useState<number | null>(null)
-  const [suggestionDoc, setSuggestionDoc] = useState<any>(null)
-  const [suggestionResult, setSuggestionResult] = useState<any>(null)
-  const [showSuggestionDialog, setShowSuggestionDialog] = useState(false)
+  const [crearYAsignarTipo] = useMutation(CREAR_Y_ASIGNAR_TIPO)
+  const [docParaCrearTipo, setDocParaCrearTipo] = useState<any>(null)
+  const [showCrearTipoDialog, setShowCrearTipoDialog] = useState(false)
   const [nombreNuevoTipo, setNombreNuevoTipo] = useState('')
+  const [palabrasClaveNuevoTipo, setPalabrasClaveNuevoTipo] = useState('')
   const [loadingCrearTipo, setLoadingCrearTipo] = useState(false)
 
-  const handleSugerirIA = async (doc: any) => {
-    const docId = parseInt(doc.id)
-    setLoadingSugerirId(docId)
-    try {
-      const { data } = await sugerirIA({ variables: { documentoId: docId } })
-      if (data?.sugerirClasificacionIa?.success) {
-        setSuggestionDoc(doc)
-        setSuggestionResult(data.sugerirClasificacionIa)
-        setNombreNuevoTipo(data.sugerirClasificacionIa.nombreSugerido || '')
-        setShowSuggestionDialog(true)
-      }
-    } finally {
-      setLoadingSugerirId(null)
-    }
-  }
-
-  const handleAplicarSugerencia = async () => {
-    if (!suggestionResult?.tipoSugerido || !suggestionDoc) return
-    await handleAsignar(suggestionDoc.id, suggestionResult.tipoSugerido.id.toString())
-    setShowSuggestionDialog(false)
-    setSuggestionDoc(null)
-    setSuggestionResult(null)
+  const openCrearTipoDialog = (doc: any) => {
+    setDocParaCrearTipo(doc)
+    setNombreNuevoTipo('')
+    setPalabrasClaveNuevoTipo('')
+    setShowCrearTipoDialog(true)
   }
 
   const handleCrearYAsignar = async () => {
-    if (!suggestionDoc || !nombreNuevoTipo.trim()) return
+    if (!docParaCrearTipo || !nombreNuevoTipo.trim()) return
     setLoadingCrearTipo(true)
     try {
       const { data } = await crearYAsignarTipo({
         variables: {
-          documentoId: parseInt(suggestionDoc.id),
+          documentoId: parseInt(docParaCrearTipo.id),
           nombre: nombreNuevoTipo.trim(),
-          palabrasClave: suggestionResult?.palabrasClaveSugeridas || '',
+          palabrasClave: palabrasClaveNuevoTipo.trim(),
         },
       })
-      if (data?.crearYAsignarTipoIa?.success) {
-        setShowSuggestionDialog(false)
-        setSuggestionDoc(null)
-        setSuggestionResult(null)
+      if (data?.crearYAsignarTipo?.success) {
+        setShowCrearTipoDialog(false)
+        setDocParaCrearTipo(null)
         setNombreNuevoTipo('')
+        setPalabrasClaveNuevoTipo('')
         refetch()
       }
     } finally {
@@ -291,22 +270,10 @@ export function CasilleroDocumentos() {
                     {hasDoc ? (
                       <div className="flex items-center gap-1.5">
                         <Badge variant="success" className="text-xs flex-shrink-0">Pág. {doc.paginaNumero}</Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={(e: React.MouseEvent) => {
-                            e.stopPropagation()
-                            handleSugerirIA(doc)
-                          }}
-                          disabled={loadingSugerirId === doc.id}
-                        >
-                          {loadingSugerirId === doc.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3 w-3" />
-                          )}
-                        </Button>
+                        {/* El casillero se usa para completar el expediente; si la
+                            pagina resulto ser duplicada o dudosa, hay que verlo
+                            antes de darla por cerrada. */}
+                        <EstadoDocumentoBadge estado={doc.estado} />
                         <Select
                           defaultValue={tipo.id.toString()}
                           onValueChange={(value) => handleAsignar(doc.id, value)}
@@ -370,16 +337,11 @@ export function CasilleroDocumentos() {
                           size="sm"
                           onClick={(e: React.MouseEvent) => {
                             e.stopPropagation()
-                            handleSugerirIA(doc)
+                            openCrearTipoDialog(doc)
                           }}
-                          disabled={loadingSugerirId === doc.id}
                         >
-                          {loadingSugerirId === doc.id ? (
-                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3 w-3 mr-1" />
-                          )}
-                          Sugerir IA
+                          <Plus className="h-3 w-3 mr-1" />
+                          Crear tipo
                         </Button>
                         <Select onValueChange={(value) => handleAsignar(doc.id, value)}>
                           <SelectTrigger className="w-[180px]" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
@@ -433,91 +395,54 @@ export function CasilleroDocumentos() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de sugerencia IA */}
-      <Dialog open={showSuggestionDialog} onOpenChange={setShowSuggestionDialog}>
+      {/* Dialog de crear tipo manual */}
+      <Dialog open={showCrearTipoDialog} onOpenChange={setShowCrearTipoDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Sugerencia de Clasificación IA
+              <Plus className="h-5 w-5 text-primary" />
+              Crear tipo y asignar
             </DialogTitle>
             <DialogDescription>
-              Página {suggestionDoc?.paginaNumero} — Basado en el texto extraído del documento
+              Página {docParaCrearTipo?.paginaNumero} — Se creará el tipo y se asignará el documento
             </DialogDescription>
           </DialogHeader>
 
-          {suggestionResult && (
-            <div className="space-y-4">
-              <div>
-                <Label className="text-sm font-medium">Tipo de documento sugerido</Label>
-                <div className="mt-1.5 p-3 rounded-lg border bg-primary/5 flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="font-medium">
-                      {suggestionResult.tipoSugerido?.nombre || suggestionResult.nombreSugerido || 'Tipo nuevo'}
-                    </p>
-                    {suggestionResult.esNuevoTipo && (
-                      <p className="text-xs text-muted-foreground">No coincide con ningún tipo existente</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {suggestionResult.esNuevoTipo && (
-                <div>
-                  <Label className="text-sm font-medium">Nombre del nuevo tipo</Label>
-                  <Input
-                    className="mt-1.5"
-                    value={nombreNuevoTipo}
-                    onChange={(e) => setNombreNuevoTipo(e.target.value)}
-                    placeholder="Ej: Libreta de Notas"
-                  />
-                </div>
-              )}
-
-              {suggestionResult.palabrasClaveSugeridas && (
-                <div>
-                  <Label className="text-sm font-medium">Palabras clave sugeridas</Label>
-                  <Input
-                    className="mt-1.5"
-                    value={suggestionResult.palabrasClaveSugeridas}
-                    readOnly
-                  />
-                </div>
-              )}
-
-              {suggestionResult.rawResponse && (
-                <div>
-                  <Label className="text-sm font-medium">Respuesta de Gemini</Label>
-                  <div className="mt-1.5 p-3 rounded-lg border bg-muted/30 text-xs font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">
-                    {suggestionResult.rawResponse}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <Button variant="outline" onClick={() => setShowSuggestionDialog(false)}>
-                  Descartar
-                </Button>
-                {suggestionResult.tipoSugerido && (
-                  <Button onClick={handleAplicarSugerencia}>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Aplicar como {suggestionResult.tipoSugerido.nombre}
-                  </Button>
-                )}
-                {suggestionResult.esNuevoTipo && (
-                  <Button onClick={handleCrearYAsignar} disabled={loadingCrearTipo || !nombreNuevoTipo.trim()}>
-                    {loadingCrearTipo ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-4 w-4 mr-2" />
-                    )}
-                    Crear tipo y asignar
-                  </Button>
-                )}
-              </div>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Nombre del nuevo tipo</Label>
+              <Input
+                className="mt-1.5"
+                value={nombreNuevoTipo}
+                onChange={(e) => setNombreNuevoTipo(e.target.value)}
+                placeholder="Ej: Libreta de Notas"
+              />
             </div>
-          )}
+
+            <div>
+              <Label className="text-sm font-medium">Palabras clave (separadas por coma)</Label>
+              <Input
+                className="mt-1.5"
+                value={palabrasClaveNuevoTipo}
+                onChange={(e) => setPalabrasClaveNuevoTipo(e.target.value)}
+                placeholder="Ej: libreta, notas, calificaciones"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={() => setShowCrearTipoDialog(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleCrearYAsignar} disabled={loadingCrearTipo || !nombreNuevoTipo.trim()}>
+                {loadingCrearTipo ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-2" />
+                )}
+                Crear tipo y asignar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

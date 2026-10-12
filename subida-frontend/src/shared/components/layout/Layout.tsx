@@ -1,40 +1,63 @@
-import { Link, useLocation } from 'react-router-dom'
-import { 
-  LayoutDashboard, 
-  Users, 
-  Upload, 
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import type { LucideIcon } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Users,
+  Upload,
   LogOut,
   Menu,
   X,
   FileText,
   AlertCircle,
-  Building2,
-  Eye
+  Eye,
+  HelpCircle,
+  FileQuestion,
+  Copy
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { useUnidad } from '@/contexts/UnidadContext'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface LayoutProps {
   children: React.ReactNode
-  onLogout: () => void
 }
 
-const navigation = [
+interface NavItem {
+  name: string
+  href: string
+  icon: LucideIcon
+  /** Si se indica, el enlace solo aparece para esos roles. */
+  roles?: string[]
+}
+
+const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Personas', href: '/personas', icon: Users },
   { name: 'Visor Documentos', href: '/vista-persona', icon: Eye },
   { name: 'Subir Documentos', href: '/documentos/subir', icon: Upload },
   { name: 'Documentos Pendientes', href: '/documentos/pendientes', icon: AlertCircle },
-  { name: 'Unidades', href: '/configuracion/unidades', icon: Building2 },
+  { name: 'Revisión: Dudosas', href: '/revision/dudosas', icon: HelpCircle, roles: ['admin', 'operador'] },
+  { name: 'Revisión: Sin Clasificar', href: '/revision/sin-clasificar', icon: FileQuestion, roles: ['admin', 'operador'] },
+  { name: 'Revisión: Duplicados', href: '/revision/duplicados', icon: Copy, roles: ['admin', 'operador'] },
   { name: 'Tipos de Documento', href: '/configuracion/tipos-documento', icon: FileText },
 ]
 
-export function Layout({ children, onLogout }: LayoutProps) {
+export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
-  const { unidadActiva, setUnidadActiva, unidades, loading: unidadesLoading } = useUnidad()
+  const { logout, user, tieneRol } = useAuth()
+  const navigate = useNavigate()
+
+  // Los enlaces de revision solo se muestran a quien puede llegar a ellos.
+  // Ocultarlos evita prometer una pantalla que ProtectedRoute va a rechazar.
+  const navegacionVisible = navigation.filter(
+    (item) => !item.roles || tieneRol(...item.roles)
+  )
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -49,7 +72,7 @@ export function Layout({ children, onLogout }: LayoutProps) {
             </Button>
           </div>
           <nav className="p-4 space-y-1">
-            {navigation.map((item) => {
+            {navegacionVisible.map((item) => {
               const isActive = location.pathname === item.href
               return (
                 <Link
@@ -79,7 +102,7 @@ export function Layout({ children, onLogout }: LayoutProps) {
             <span className="text-lg font-semibold">Digitalización</span>
           </div>
           <nav className="flex-1 p-4 space-y-1">
-            {navigation.map((item) => {
+            {navegacionVisible.map((item) => {
               const isActive = location.pathname === item.href
               return (
                 <Link
@@ -101,10 +124,10 @@ export function Layout({ children, onLogout }: LayoutProps) {
             <Button
               variant="ghost"
               className="w-full justify-start"
-              onClick={onLogout}
+              onClick={handleLogout}
             >
               <LogOut className="h-5 w-5 mr-3" />
-              Cerrar Sesión
+              Cerrar Sesión{user ? ` (${user.username})` : ''}
             </Button>
           </div>
         </div>
@@ -122,26 +145,9 @@ export function Layout({ children, onLogout }: LayoutProps) {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
-          {unidades.length > 0 && (
-            <Select
-              value={unidadActiva?.id?.toString() || ''}
-              onValueChange={(value) => {
-                const found = unidades.find((u) => u.id.toString() === value)
-                if (found) setUnidadActiva(found)
-              }}
-            >
-              <SelectTrigger className="w-[280px]" disabled={unidadesLoading}>
-                <SelectValue placeholder="Seleccionar unidad" />
-              </SelectTrigger>
-              <SelectContent>
-                {unidades.map((u) => (
-                  <SelectItem key={u.id} value={u.id.toString()}>
-                    {u.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <span className="text-sm text-muted-foreground hidden sm:block">
+            Sistema de Digitalización
+          </span>
         </div>
         <main className="p-4 lg:p-8">
           {children}
