@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import { GET_TIPOS_DOCUMENTO } from '@/graphql/queries/documentos'
 import { CREATE_TIPO_DOCUMENTO, UPDATE_TIPO_DOCUMENTO, DELETE_TIPO_DOCUMENTO } from '@/graphql/mutations/documentos'
@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { KeywordInput } from '@/components/ui/keyword-input'
 import { Plus, Trash2, Pencil } from 'lucide-react'
-import { useUnidad } from '@/contexts/UnidadContext'
 
 interface TipoForm {
   nombre: string
@@ -34,16 +33,10 @@ export function TiposDocumento() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<TipoForm>(emptyForm)
-  const { unidadActiva } = useUnidad()
 
   const { data, loading, refetch } = useQuery(GET_TIPOS_DOCUMENTO, {
-    variables: { unidadId: Number(unidadActiva?.id) || 0, activo: true },
-    skip: !unidadActiva,
+    variables: { activo: true },
   })
-
-  useEffect(() => {
-    if (unidadActiva) refetch()
-  }, [unidadActiva?.id])
 
   const [createTipo] = useMutation(CREATE_TIPO_DOCUMENTO)
   const [updateTipo] = useMutation(UPDATE_TIPO_DOCUMENTO)
@@ -70,7 +63,6 @@ export function TiposDocumento() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!unidadActiva) return
 
     const keywordsWithWeight = autoAssignWeight(form.palabrasClave)
     const payload = {
@@ -89,7 +81,7 @@ export function TiposDocumento() {
         }
       } else {
         const { data } = await createTipo({
-          variables: { unidadId: Number(unidadActiva.id), ...payload },
+          variables: { ...payload },
         })
         if (!data?.createTipoDocumento?.success) {
           alert(data?.createTipoDocumento?.message || 'Error al crear')

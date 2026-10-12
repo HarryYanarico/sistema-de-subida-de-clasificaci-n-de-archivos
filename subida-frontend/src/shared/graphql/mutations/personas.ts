@@ -2,7 +2,6 @@ import { gql } from '@apollo/client';
 
 export const CREATE_PERSONA = gql`
   mutation CreatePersona(
-    $unidadId: Int!
     $codigo: String!
     $nombres: String!
     $apellidos: String!
@@ -11,7 +10,6 @@ export const CREATE_PERSONA = gql`
     $telefono: String
   ) {
     createPersona(
-      unidadId: $unidadId
       codigo: $codigo
       nombres: $nombres
       apellidos: $apellidos

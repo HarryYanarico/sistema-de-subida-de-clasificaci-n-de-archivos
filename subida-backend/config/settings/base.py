@@ -18,12 +18,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
-    'graphene_django',
+    'strawberry_django',
+    'apps.graphql',
     'apps.users',
+    # Historica: solo aporta la migracion final que borra la tabla
+    # `unidades`. Sin modelos ni API. No quitar hasta squashear migraciones.
     'apps.unidades',
     'apps.personas',
     'apps.documentos',
-    'apps.storage',
 ]
 
 MIDDLEWARE = [
@@ -89,8 +91,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',')
 
-GRAPHENE = {
-    'SCHEMA': 'config.schema.schema',
+# Defaults explicitos de strawberry-graphql-django. Se dejan en False a proposito:
+#   GENERATE_ENUMS_FROM_CHOICES: los `choices` de Documento.estado y User.role se
+#     exponen como String con el valor de la base ("pendiente", "admin"), no como
+#     enum. El frontend nunca leia esos campos.
+#   FIELD_DESCRIPTION_FROM_HELP_TEXT: los help_text del modelo estan escritos para
+#     el admin de Django, no para quien consume la API.
+STRAWBERRY_DJANGO = {
+    'GENERATE_ENUMS_FROM_CHOICES': False,
+    'FIELD_DESCRIPTION_FROM_HELP_TEXT': False,
 }
 
 MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'http://localhost:9000')
@@ -98,8 +107,6 @@ MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')
 MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
 MINIO_BUCKET = os.getenv('MINIO_BUCKET', 'digitalizacion')
 MINIO_USE_SSL = os.getenv('MINIO_USE_SSL', 'False').lower() == 'true'
-
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800

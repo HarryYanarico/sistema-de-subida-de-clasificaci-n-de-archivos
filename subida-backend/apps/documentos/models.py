@@ -4,14 +4,17 @@ from apps.personas.models import Persona
 
 
 class TipoDocumento(models.Model):
-    unidad = models.ForeignKey(
-        'unidades.Unidad', on_delete=models.CASCADE,
-        related_name='tipos_documento'
-    )
     nombre = models.CharField(max_length=255)
-    slug = models.SlugField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True)
     palabras_clave = models.TextField(
         help_text="Formato: palabra:peso,palabra:peso (peso 1-5, default 1)"
+    )
+    keywords_obligatorias = models.JSONField(
+        default=list, blank=True,
+        help_text=(
+            "Palabras que deben aparecer para que este tipo sea candidato. "
+            "Lista de strings. Si alguna no matchea, el tipo queda descartado."
+        ),
     )
     activo = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -22,7 +25,6 @@ class TipoDocumento(models.Model):
         ordering = ['nombre']
         verbose_name = 'tipo de documento'
         verbose_name_plural = 'tipos de documento'
-        unique_together = ('slug', 'unidad')
 
     def __str__(self):
         return self.nombre
@@ -33,30 +35,29 @@ class TipoDocumento(models.Model):
 
     @property
     def lista_palabras_clave_con_pesos(self):
-        resultado = []
-        for item in self.palabras_clave.split(','):
-            item = item.strip()
-            if not item:
-                continue
-            if ':' in item:
-                partes = item.split(':')
-                palabra = partes[0].strip().lower()
-                try:
-                    peso = int(partes[1].strip())
-                except (ValueError, IndexError):
-                    peso = 1
-            else:
-                palabra = item.lower()
-                peso = 1
-            resultado.append((palabra, max(1, min(5, peso))))
-        return resultado
+        """`[(palabra, peso)]` parseado de `palabras_clave`.
+
+        Delega en el modulo del clasificador para que no haya dos
+        implementaciones del formato `palabra:peso` que puedan divergir.
+        """
+        from apps.storage.clasificador import parsear_palabras_clave
+
+        return parsear_palabras_clave(self.palabras_clave)
 
 
 
 class Documento(models.Model):
+    # 'pendiente' se conserva: hay documentos historicos con ese valor y la
+    # mutation `deleteTipoDocumento` tambien lo usa al desenlazar un tipo. Se
+    # distingue de 'sin_clasificar' (el clasificador no encontro nada), de
+    # 'dudosa' (encontro algo pero la eleccion no es defendible) y de
+    # 'duplicado' (copia de otra pagina ya presente).
     ESTADO_CHOICES = [
         ('clasificado', 'Clasificado'),
+        ('dudosa', 'Dudosa'),
+        ('duplicado', 'Duplicado'),
         ('pendiente', 'Pendiente'),
+        ('sin_clasificar', 'Sin clasificar'),
         ('verificado', 'Verificado'),
     ]
 
@@ -76,9 +77,30 @@ class Documento(models.Model):
     pagina_numero = models.IntegerField()
     texto_extraido = models.TextField(blank=True, default='')
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
-    origen_id = models.CharField(
-        max_length=500, null=True, blank=True, db_index=True,
-        help_text="Identificador del archivo en el proveedor de origen (evita reimportar)"
+    score = models.FloatField(
+        null=True, blank=True,
+        help_text="Puntaje del clasificador local. Null si no se pudo clasificar",
+    )
+    keywords_matcheadas = models.JSONField(
+        default=list, blank=True,
+        help_text="Palabras clave que el clasificador local encontro en el texto",
+    )
+    historial_clasificacion = models.JSONField(
+        default=list, blank=True,
+        help_text=(
+            "Trazabilidad de las correcciones humanas. Una entrada por "
+            "reclasificacion: quien, que estado tenia, que tipo tenia, que "
+            "tipo quedo, cuando y con que score."
+        ),
+    )
+    phash = models.CharField(
+        max_length=64, null=True, blank=True, db_index=True,
+        help_text="Perceptual hash de la pagina, para detectar duplicados",
+    )
+    duplicado_de = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='duplicados',
+        help_text="Documento original del que este es una copia perceptual",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -92,80 +114,3 @@ class Documento(models.Model):
     def __str__(self):
         tipo = self.tipo_documento.nombre if self.tipo_documento else 'Sin clasificar'
         return f"{self.persona.codigo} - Pág {self.pagina_numero} - {tipo}"
-
-
-class OrigenArchivos(models.Model):
-    TIPO_CHOICES = [
-        ('google_drive', 'Google Drive'),
-        ('s3', 'Almacenamiento S3 compatible'),
-        ('onedrive', 'OneDrive / SharePoint'),
-        ('carpeta', 'Carpeta local o de red'),
-    ]
-
-    unidad = models.OneToOneField(
-        'unidades.Unidad', on_delete=models.CASCADE, related_name='origen_archivos'
-    )
-    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='google_drive')
-    identificador = models.CharField(
-        max_length=500, blank=True, default='',
-        help_text="Carpeta de Drive, o bucket/prefijo S3, o ruta local"
-    )
-    drive_compartido = models.BooleanField(
-        default=False,
-        help_text="Marcar si el identificador es un Drive compartido y no una Drive personal"
-    )
-    credencial_ref = models.CharField(
-        max_length=255, blank=True, default='',
-        help_text="Alias del secreto (ruta del JSON o variable de entorno). Nunca la clave en sí"
-    )
-    activo = models.BooleanField(default=True)
-    marca_tiempo = models.DateTimeField(
-        null=True, blank=True,
-        help_text="Última modificación importada. Solo se usa como pre-filtro"
-    )
-    ultima_sincronizacion = models.DateTimeField(null=True, blank=True)
-    ultimo_error = models.TextField(blank=True, default='')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = 'origen_archivos'
-        verbose_name = 'origen de archivos'
-        verbose_name_plural = 'origenes de archivos'
-
-    def __str__(self):
-        return f'{self.unidad} ({self.get_tipo_display()})'
-
-
-class Sincronizacion(models.Model):
-    ESTADO_CHOICES = [
-        ('exitosa', 'Exitosa'),
-        ('con_errores', 'Con errores'),
-        ('fallida', 'Fallida'),
-    ]
-
-    origen = models.ForeignKey(
-        OrigenArchivos, on_delete=models.CASCADE, related_name='sincronizaciones'
-    )
-    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='exitosa')
-    iniciada_en = models.DateTimeField(auto_now_add=True)
-    encontrada = models.IntegerField(default=0)
-    procesados = models.IntegerField(default=0)
-    omitidos_ya_importados = models.IntegerField(default=0)
-    omitidos_sin_codigo = models.IntegerField(default=0)
-    omitidos_sin_persona = models.IntegerField(default=0)
-    omitidos_tamano = models.IntegerField(default=0)
-    omitidos_no_pdf = models.IntegerField(default=0)
-    paginas = models.IntegerField(default=0)
-    errores = models.IntegerField(default=0)
-    mensaje = models.TextField(blank=True, default='')
-    detalle = models.JSONField(default=list, blank=True)
-
-    class Meta:
-        db_table = 'sincronizaciones'
-        ordering = ['-iniciada_en']
-        verbose_name = 'sincronización'
-        verbose_name_plural = 'sincronizaciones'
-
-    def __str__(self):
-        return f'{self.origen} - {self.iniciada_en:%Y-%m-%d %H:%M} - {self.get_estado_display()}'

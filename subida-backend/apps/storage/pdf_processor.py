@@ -1,25 +1,23 @@
+import io
 import re
 import fitz
-from django.conf import settings
+from .clasificador import ResultadoClasificacion, clasificar
 from .services import MinIOService
+
+# Escala del pixmap usado para calcular el pHash. No hace falta resolucion
+# alta: el pHash mira estructura, no detalle, y el mismo factor alimenta al
+# endpoint de miniaturas que ya existe.
+ESCALA_PHASH = 0.5
 
 
 class PDFProcessor:
     def __init__(self):
         self.storage = MinIOService()
-        self._ai_classifier = None
 
-    @property
-    def ai_classifier(self):
-        if self._ai_classifier is None:
-            from .ai_classifier import GeminiClassifier
-            self._ai_classifier = GeminiClassifier()
-        return self._ai_classifier
-
-    def process_pdf(self, persona_codigo: str, filename: str, file_content: bytes, unidad=None) -> list[dict]:
-        from apps.personas.models import Persona
-
-        persona = Persona.objects.filter(codigo=persona_codigo).first()
+    def process_pdf(self, persona_codigo: str, filename: str, file_content: bytes,
+                    persona=None) -> list[dict]:
+        if persona is None:
+            persona = self._resolver_persona(persona_codigo)
         doc = fitz.open(stream=file_content, filetype="pdf")
         original_key = self.storage.upload_pdf(persona_codigo, filename, file_content)
         results = []
@@ -29,23 +27,53 @@ class PDFProcessor:
             text = page.get_text()
 
             tipo_documento = None
+            resultado = ResultadoClasificacion()
 
             if not self._is_blank(text):
-                tipo_documento, score = self._classify_local(text, unidad=unidad)
-
-                if tipo_documento is None:
-                    sanitized = self._sanitize_text_for_ai(text, persona)
-                    tipo_documento = self._classify_with_ai(sanitized, unidad=unidad)
+                resultado = self._classify_local(text)
+                tipo_documento = resultado.tipo_ganador
 
             results.append({
                 'pagina_numero': page_num + 1,
                 'texto_extraido': text,
                 'archivo_original': original_key,
                 'tipo_documento': tipo_documento,
+                'score': resultado.score_ganador if tipo_documento else None,
+                'keywords_matcheadas': resultado.keywords_matcheadas if tipo_documento else [],
+                'es_dudosa': resultado.es_dudosa and tipo_documento is not None,
+                'phash': self._calcular_phash(page),
             })
 
         doc.close()
         return results
+
+    @staticmethod
+    def _calcular_phash(page) -> str | None:
+        """pHash de la pagina, o None si la imagen no se puede leer.
+
+        El pixmap se queda en memoria y se descarta: el proyecto ya renderiza
+        las miniaturas on-the-fly en `DocumentoThumbnailView`, asi que guardar
+        un PNG por pagina en MinIO seria duplicar el almacenamiento sin ganar
+        nada (el pHash no necesita volver a mirar la imagen).
+        """
+        try:
+            import imagehash
+            from PIL import Image
+
+            pix = page.get_pixmap(matrix=fitz.Matrix(ESCALA_PHASH, ESCALA_PHASH))
+            with Image.open(io.BytesIO(pix.tobytes('png'))) as imagen:
+                return str(imagehash.phash(imagen))
+        except Exception:
+            # Una pagina ilegible no debe tumbar la ingesta completa: se
+            # clasifica igual, solo se pierde la deteccion de duplicados.
+            return None
+
+    @staticmethod
+    def _resolver_persona(persona_codigo: str):
+        """Resuelve la persona por codigo (unico global en single-tenant)."""
+        from apps.personas.models import Persona
+
+        return Persona.objects.filter(codigo=persona_codigo).first()
 
     def _is_blank(self, text: str) -> bool:
         if not text or not text.strip():
@@ -53,74 +81,8 @@ class PDFProcessor:
         clean = re.sub(r'\s+', '', text)
         return len(clean) < 10
 
-    def _classify_local(self, text: str, unidad=None) -> tuple:
+    def _classify_local(self, text: str) -> ResultadoClasificacion:
         from apps.documentos.models import TipoDocumento
 
         tipos = TipoDocumento.objects.filter(activo=True)
-        if unidad:
-            tipos = tipos.filter(unidad=unidad)
-        texto_lower = text.lower()
-        mejor_tipo = None
-        max_score = 0
-
-        for tipo in tipos:
-            score = 0
-            for palabra, peso in tipo.lista_palabras_clave_con_pesos:
-                if palabra in texto_lower:
-                    score += peso
-
-            if score > max_score:
-                max_score = score
-                mejor_tipo = tipo
-
-        return mejor_tipo, max_score
-
-    def _sanitize_text_for_ai(self, text: str, persona) -> str:
-        sanitized = text
-
-        if persona:
-            campos = [
-                persona.nombres,
-                persona.apellidos,
-                persona.ci,
-                persona.email,
-                persona.telefono,
-                persona.codigo,
-            ]
-            for valor in campos:
-                if valor:
-                    escaped = re.escape(str(valor))
-                    sanitized = re.sub(escaped, '', sanitized, flags=re.IGNORECASE)
-
-        sanitized = re.sub(r'\d+', '', sanitized)
-
-        sanitized = re.sub(r'\b\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b', '', sanitized)
-        sanitized = re.sub(r'\b\d{1,2}\s+de\s+\w+\s+de\s+\d{4}\b', '', sanitized, flags=re.IGNORECASE)
-        sanitized = re.sub(r'\b\d{1,2}\s+de\s+\w+\b', '', sanitized, flags=re.IGNORECASE)
-
-        sanitized = re.sub(r'[^\w\s.,;:!?¿¡\-]', '', sanitized)
-        sanitized = re.sub(r'\s+', ' ', sanitized).strip()
-
-        return sanitized
-
-    def _classify_with_ai(self, sanitized_text: str, unidad=None):
-        from apps.documentos.models import TipoDocumento
-
-        if not self.ai_classifier.is_available:
-            return None
-
-        tipos_qs = TipoDocumento.objects.filter(activo=True)
-        if unidad:
-            tipos_qs = tipos_qs.filter(unidad=unidad)
-
-        tipos = list(
-            tipos_qs.values('nombre', 'slug')
-        )
-
-        if not tipos:
-            return None
-
-        slug = self.ai_classifier.classify(sanitized_text, tipos)
-        if slug:
-            return TipoDocumento.objects.filter(slug=slug).first()
-        return None
+        return clasificar(text, tipos)

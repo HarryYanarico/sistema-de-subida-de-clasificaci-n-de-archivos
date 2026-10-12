@@ -1,6 +1,11 @@
 Django==4.2.16
 djangorestframework==3.15.2
-graphene-django==3.1.5
+strawberry-graphql==0.284.1
+strawberry-graphql-django==0.67.0
+# graphql-core 3.3.0 eliminó graphql.execution.ExecutionContext, que
+# strawberry-graphql 0.284.1 sigue importando en strawberry/schema/_graphql_core.py.
+# El metadato de strawberry declara >=3.2.0,<3.4.0, así que hay que fijar el piso.
+graphql-core==3.2.6
 django-cors-headers==4.4.0
 django-filter==24.3
 psycopg2-binary==2.9.9
@@ -8,6 +13,12 @@ boto3==1.34.144
 python-dotenv==1.0.1
 Pillow==10.4.0
 PyMuPDF==1.24.5
-google-genai>=1.0.0
-google-api-python-client==2.201.0
-google-auth==2.59.1
+# Match tolerante a OCR sucio en el clasificador local (apps/storage/clasificador.py).
+rapidfuzz==3.14.6
+# pHash perceptual para detectar paginas repetidas (Fase 6, apps/documentos/deduplicacion.py).
+# imagehash exige numpy, scipy y PyWavelets; se fijan aqui para que el entorno
+# sea reproducible y no dependa de lo que resuelva pip.
+imagehash==4.3.1
+numpy==2.4.6
+scipy==1.17.1
+PyWavelets==1.9.0

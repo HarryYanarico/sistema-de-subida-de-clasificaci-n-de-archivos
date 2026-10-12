@@ -1,0 +1,230 @@
+type Query {
+  tiposDocumento(unidadId: Int!, activo: Boolean): [TipoDocumentoType]
+  tipoDocumento(id: Int!): TipoDocumentoType
+  documentosPersona(personaId: Int!): DocumentoByPersona
+  documentosPendientes(unidadId: Int!): [DocumentoType]
+  personas(unidadId: Int!, search: String, page: Int = 1, limit: Int = 10): PersonaConnection
+  persona(id: Int!): PersonaType
+  unidades(activo: Boolean): [UnidadType]
+  unidad(id: Int!): UnidadType
+}
+
+type TipoDocumentoType {
+  id: ID!
+  nombre: String!
+  slug: String!
+
+  """Formato: palabra:peso,palabra:peso (peso 1-5, default 1)"""
+  palabrasClave: String!
+  activo: Boolean!
+  createdAt: DateTime!
+}
+
+"""
+The `DateTime` scalar type represents a DateTime
+value as specified by
+[iso8601](https://en.wikipedia.org/wiki/ISO_8601).
+"""
+scalar DateTime
+
+type DocumentoByPersona {
+  personaId: Int
+  documentos: [DocumentoType]
+  totalPaginas: Int
+  clasificados: Int
+  pendientes: Int
+}
+
+type DocumentoType {
+  id: ID!
+  persona: PersonaType!
+  tipoDocumento: TipoDocumentoType
+
+  """Ruta del PDF original en MinIO"""
+  archivoOriginal: String!
+
+  """Ruta de la página individual en MinIO (obsoleto, se extrae on-the-fly)"""
+  archivoPagina: String
+  paginaNumero: Int!
+  textoExtraido: String!
+  estado: DocumentosDocumentoEstadoChoices!
+  createdAt: DateTime!
+}
+
+type PersonaType {
+  id: ID!
+  codigo: String!
+  nombres: String!
+  apellidos: String!
+  ci: String!
+  email: String
+  telefono: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  totalDocumentos: Int
+  documentosClasificados: Int
+  porcentajeCompletado: Float
+  tieneDocumentosClasificados: Boolean
+}
+
+"""An enumeration."""
+enum DocumentosDocumentoEstadoChoices {
+  """Clasificado"""
+  CLASIFICADO
+
+  """Pendiente"""
+  PENDIENTE
+
+  """Verificado"""
+  VERIFICADO
+}
+
+type PersonaConnection {
+  items: [PersonaType]
+  total: Int
+  page: Int
+  totalPages: Int
+}
+
+type UnidadType {
+  id: ID!
+  nombre: String!
+  slug: String!
+  descripcion: String!
+  activo: Boolean!
+  createdAt: DateTime!
+}
+
+type Mutation {
+  loginUser(password: String!, username: String!): LoginUser
+  createUser(email: String!, firstName: String!, lastName: String!, password: String!, role: String, telefono: String, username: String!): CreateUser
+  createTipoDocumento(nombre: String!, palabrasClave: String!, unidadId: Int!): CreateTipoDocumento
+  updateTipoDocumento(activo: Boolean, id: Int!, nombre: String, palabrasClave: String): UpdateTipoDocumento
+  deleteTipoDocumento(id: Int!): DeleteTipoDocumento
+  asignarDocumento(documentoId: Int!, tipoDocumentoId: Int!): AsignarDocumento
+  clasificarDocumento(documentoId: Int!): ClasificarDocumento
+  sugerirClasificacionIa(documentoId: Int!): SugerirClasificacionIA
+  crearYAsignarTipoIa(documentoId: Int!, nombre: String!, palabrasClave: String!): CrearYAsignarTipoIA
+  createPersona(apellidos: String!, ci: String, codigo: String!, email: String, nombres: String!, telefono: String, unidadId: Int!): CreatePersona
+  updatePersona(apellidos: String, ci: String, codigo: String, email: String, id: Int!, nombres: String, telefono: String): UpdatePersona
+  deletePersona(id: Int!): DeletePersona
+  createUnidad(descripcion: String, nombre: String!): CreateUnidad
+  updateUnidad(activo: Boolean, descripcion: String, id: Int!, nombre: String): UpdateUnidad
+  deleteUnidad(id: Int!): DeleteUnidad
+}
+
+type LoginUser {
+  user: UserType
+  token: String
+  success: Boolean
+  message: String
+}
+
+type UserType {
+  id: ID!
+
+  """
+  Requerido. 150 carácteres como máximo. Únicamente letras, dígitos y @/./+/-/_ 
+  """
+  username: String!
+  firstName: String!
+  lastName: String!
+  email: String!
+  role: UsersUserRoleChoices!
+  telefono: String!
+}
+
+"""An enumeration."""
+enum UsersUserRoleChoices {
+  """Administrador"""
+  ADMIN
+
+  """Operador"""
+  OPERADOR
+}
+
+type CreateUser {
+  user: UserType
+  success: Boolean
+  message: String
+}
+
+type CreateTipoDocumento {
+  tipoDocumento: TipoDocumentoType
+  success: Boolean
+  message: String
+}
+
+type UpdateTipoDocumento {
+  tipoDocumento: TipoDocumentoType
+  success: Boolean
+  message: String
+}
+
+type DeleteTipoDocumento {
+  success: Boolean
+  message: String
+}
+
+type AsignarDocumento {
+  documento: DocumentoType
+  success: Boolean
+  message: String
+}
+
+type ClasificarDocumento {
+  documento: DocumentoType
+  success: Boolean
+  message: String
+}
+
+type SugerirClasificacionIA {
+  tipoSugerido: TipoDocumentoType
+  palabrasClaveSugeridas: String
+  esNuevoTipo: Boolean
+  nombreSugerido: String
+  rawResponse: String
+  success: Boolean
+  message: String
+}
+
+type CrearYAsignarTipoIA {
+  tipoDocumento: TipoDocumentoType
+  documento: DocumentoType
+  success: Boolean
+  message: String
+}
+
+type CreatePersona {
+  persona: PersonaType
+  success: Boolean
+  message: String
+}
+
+type UpdatePersona {
+  persona: PersonaType
+  success: Boolean
+  message: String
+}
+
+type DeletePersona {
+  success: Boolean
+  message: String
+}
+
+type CreateUnidad {
+  unidad: UnidadType
+  success: Boolean
+  message: String
+}
+
+type UpdateUnidad {
+  unidad: UnidadType
+  success: Boolean
+  message: String
+}
+
+type DeleteUnidad {
+  success: Boolean
+  message: String
+}

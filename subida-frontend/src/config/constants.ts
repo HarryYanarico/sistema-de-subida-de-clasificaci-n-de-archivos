@@ -11,5 +11,4 @@ export const ROUTES = {
   DOCUMENTOS_PENDIENTES: '/documentos/pendientes',
   CONFIGURACION: '/configuracion',
   TIPOS_DOCUMENTO: '/configuracion/tipos-documento',
-  UNIDADES: '/configuracion/unidades',
 } as const;

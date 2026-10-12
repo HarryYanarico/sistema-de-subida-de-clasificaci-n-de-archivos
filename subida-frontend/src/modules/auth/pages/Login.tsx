@@ -1,21 +1,25 @@
 import { useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useMutation } from '@apollo/client'
 import { LOGIN_USER } from '@/graphql/mutations/auth'
+import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileText } from 'lucide-react'
 
-interface LoginProps {
-  onLogin: () => void
-}
-
-export function Login({ onLogin }: LoginProps) {
+export function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loginUser] = useMutation(LOGIN_USER)
+  const { login } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  // SiProtectedRoute nos mando aca con la ruta que el usuario intentaba ver.
+  const destino = (location.state as { from?: string } | null)?.from || '/'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,10 +30,9 @@ export function Login({ onLogin }: LoginProps) {
         variables: { username, password },
       })
 
-      if (data?.loginUser?.success) {
-        localStorage.setItem('token', data.loginUser.token)
-        localStorage.setItem('user', JSON.stringify(data.loginUser.user))
-        onLogin()
+      if (data?.loginUser?.success && data.loginUser.token && data.loginUser.user) {
+        login(data.loginUser.token, data.loginUser.user)
+        navigate(destino, { replace: true })
       } else {
         setError(data?.loginUser?.message || 'Error al iniciar sesión')
       }

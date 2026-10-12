@@ -8,11 +8,9 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useUnidad } from '@/contexts/UnidadContext'
 
 export function RegistrarPersona() {
   const navigate = useNavigate()
-  const { unidadActiva } = useUnidad()
   const [form, setForm] = useState({
     codigo: '',
     nombres: '',
@@ -32,15 +30,9 @@ export function RegistrarPersona() {
     e.preventDefault()
     setError('')
 
-    if (!unidadActiva) {
-      setError('Debe seleccionar una unidad')
-      return
-    }
-
     try {
       const { data } = await createPersona({
         variables: {
-          unidadId: Number(unidadActiva.id),
           codigo: form.codigo,
           nombres: form.nombres,
           apellidos: form.apellidos,

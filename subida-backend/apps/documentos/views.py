@@ -6,12 +6,12 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import get_user_model
 from apps.personas.models import Persona
-from apps.documentos.models import Documento, OrigenArchivos, Sincronizacion
-from apps.unidades.models import Unidad
+from apps.documentos.models import Documento
+from apps.documentos.deduplicacion import buscar_duplicado
+from apps.storage.clasificador import estado_desde_pagina
 from apps.storage.ingesta import procesar_ingesta
 from apps.storage.pdf_processor import PDFProcessor
 from apps.storage.services import MinIOService
-from apps.storage.sincronizacion import resultado_dict, sincronizar_origen
 
 User = get_user_model()
 
@@ -49,17 +49,26 @@ class UploadPDFView(View):
 
             for pdf_file in files:
                 file_content = pdf_file.read()
-                results = processor.process_pdf(persona.codigo, pdf_file.name, file_content, unidad=persona.unidad)
+                results = processor.process_pdf(
+                    persona.codigo, pdf_file.name, file_content,
+                    persona=persona,
+                )
 
                 for result in results:
+                    phash = result.get('phash')
+                    original_id = buscar_duplicado(phash) if phash else None
                     Documento.objects.create(
                         persona=persona,
                         tipo_documento=result['tipo_documento'],
                         archivo_original=result['archivo_original'],
                         pagina_numero=result['pagina_numero'],
                         texto_extraido=result['texto_extraido'],
-                        estado='clasificado' if result['tipo_documento'] else 'pendiente',
+                        estado=estado_desde_pagina(result, es_duplicado=original_id is not None),
+                        score=result.get('score'),
+                        keywords_matcheadas=result.get('keywords_matcheadas') or [],
                         subido_por=usuario,
+                        phash=phash,
+                        duplicado_de_id=original_id,
                     )
                     total_pages += 1
 
@@ -77,14 +86,6 @@ class UploadPDFView(View):
 class UploadBatchPDFView(View):
     def post(self, request):
         try:
-            unidad_id = request.POST.get('unidad_id')
-            if not unidad_id:
-                return JsonResponse({'success': False, 'message': 'unidad_id es requerido'}, status=400)
-
-            unidad = Unidad.objects.filter(id=unidad_id).first()
-            if not unidad:
-                return JsonResponse({'success': False, 'message': 'Unidad no encontrada'}, status=404)
-
             files = request.FILES.getlist('pdfs')
             if not files:
                 return JsonResponse({'success': False, 'message': 'No se enviaron archivos'}, status=400)
@@ -99,7 +100,7 @@ class UploadBatchPDFView(View):
 
             for pdf_file in files:
                 ok, resultado = procesar_ingesta(
-                    pdf_file.name, pdf_file.read(), unidad, usuario, processor=processor
+                    pdf_file.name, pdf_file.read(), usuario, processor=processor
                 )
 
                 if ok:
@@ -123,120 +124,6 @@ class UploadBatchPDFView(View):
 
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)}, status=500)
-
-
-def _int_arg(request, name):
-    valor = request.POST.get(name) or request.GET.get(name)
-    if valor in (None, ''):
-        return None
-    try:
-        return int(valor)
-    except (TypeError, ValueError):
-        raise ValueError(f'{name} debe ser un número entero')
-
-
-def _serializar_sincronizacion(sincronizacion):
-    datos = resultado_dict(sincronizacion)
-    datos['iniciada_en'] = (
-        sincronizacion.iniciada_en.isoformat()
-        if hasattr(sincronizacion, 'iniciada_en') else None
-    )
-    return datos
-
-
-def _serializar_origen(origen):
-    return {
-        'id': origen.id,
-        'unidad_id': origen.unidad_id,
-        'unidad': origen.unidad.nombre,
-        'tipo': origen.tipo,
-        'identificador': origen.identificador,
-        'drive_compartido': origen.drive_compartido,
-        'activo': origen.activo,
-        'marca_tiempo': origen.marca_tiempo.isoformat() if origen.marca_tiempo else None,
-        'ultima_sincronizacion': (
-            origen.ultima_sincronizacion.isoformat() if origen.ultima_sincronizacion else None
-        ),
-        'ultimo_error': origen.ultimo_error,
-    }
-
-
-@method_decorator(csrf_exempt, name='dispatch')
-class SincronizacionView(View):
-    def post(self, request):
-        try:
-            origen_id = _int_arg(request, 'origen_id')
-        except ValueError as e:
-            return JsonResponse({'success': False, 'message': str(e)}, status=400)
-
-        if not origen_id:
-            return JsonResponse(
-                {'success': False, 'message': 'origen_id es requerido'}, status=400
-            )
-
-        origen = OrigenArchivos.objects.filter(id=origen_id).select_related('unidad').first()
-        if not origen:
-            return JsonResponse({'success': False, 'message': 'Origen no encontrado'}, status=404)
-        if not origen.activo:
-            return JsonResponse(
-                {'success': False, 'message': 'El origen está inactivo'}, status=400
-            )
-
-        try:
-            limite = _int_arg(request, 'limit')
-            dry_run = (request.POST.get('dry_run') or '').lower() in ('1', 'true', 'si', 'yes')
-        except ValueError as e:
-            return JsonResponse({'success': False, 'message': str(e)}, status=400)
-
-        usuario = _get_user_from_request(request)
-        resultado = sincronizar_origen(
-            origen, usuario=usuario, limite=limite, dry_run=dry_run
-        )
-        datos = _serializar_sincronizacion(resultado)
-        fallida = datos['estado'] == 'fallida'
-
-        origen.refresh_from_db()
-        return JsonResponse({
-            'success': not fallida,
-            'origen': _serializar_origen(origen),
-            'resultado': datos,
-        }, status=502 if fallida else 200)
-
-
-class SincronizacionHistorialView(View):
-    def get(self, request):
-        try:
-            origen_id = _int_arg(request, 'origen_id')
-            limite = _int_arg(request, 'limit') or 20
-        except ValueError as e:
-            return JsonResponse({'success': False, 'message': str(e)}, status=400)
-
-        queryset = Sincronizacion.objects.select_related('origen__unidad')
-        if origen_id:
-            queryset = queryset.filter(origen_id=origen_id)
-
-        return JsonResponse({
-            'success': True,
-            'resultados': [
-                _serializar_sincronizacion(s) for s in queryset[:limite]
-            ],
-        })
-
-
-class OrigenArchivosListView(View):
-    def get(self, request):
-        origenes = OrigenArchivos.objects.select_related('unidad')
-        try:
-            unidad_id = _int_arg(request, 'unidad_id')
-        except ValueError as e:
-            return JsonResponse({'success': False, 'message': str(e)}, status=400)
-        if unidad_id:
-            origenes = origenes.filter(unidad_id=unidad_id)
-
-        return JsonResponse({
-            'success': True,
-            'origenes': [_serializar_origen(o) for o in origenes],
-        })
 
 
 class DocumentoFileView(View):

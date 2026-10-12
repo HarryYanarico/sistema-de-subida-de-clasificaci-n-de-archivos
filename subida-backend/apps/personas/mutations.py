@@ -1,66 +1,76 @@
-import graphene
+from typing import Optional
+
+import strawberry
+
 from .models import Persona
 from .schema import PersonaType
 
 
-class CreatePersona(graphene.Mutation):
-    class Arguments:
-        unidad_id = graphene.Int(required=True)
-        codigo = graphene.String(required=True)
-        nombres = graphene.String(required=True)
-        apellidos = graphene.String(required=True)
-        ci = graphene.String()
-        email = graphene.String()
-        telefono = graphene.String()
+@strawberry.type
+class CreatePersona:
+    persona: Optional[PersonaType]
+    success: bool
+    message: str
 
-    persona = graphene.Field(PersonaType)
-    success = graphene.Boolean()
-    message = graphene.String()
 
-    def mutate(self, info, unidad_id, codigo, nombres, apellidos, ci='', email=None, telefono=''):
+@strawberry.type
+class UpdatePersona:
+    persona: Optional[PersonaType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class DeletePersona:
+    success: bool
+    message: str
+
+
+@strawberry.type
+class Mutation:
+    @strawberry.mutation
+    def create_persona(
+        self,
+        codigo: str,
+        nombres: str,
+        apellidos: str,
+        ci: Optional[str] = None,
+        email: Optional[str] = None,
+        telefono: Optional[str] = None,
+    ) -> CreatePersona:
         try:
-            from apps.unidades.models import Unidad
-            unidad = Unidad.objects.filter(id=unidad_id).first()
-            if not unidad:
-                return CreatePersona(persona=None, success=False, message="Unidad no encontrada")
-            if Persona.objects.filter(codigo=codigo, unidad=unidad).exists():
-                return CreatePersona(persona=None, success=False, message="Ya existe una persona con ese código en esta unidad")
+            if Persona.objects.filter(codigo=codigo).exists():
+                return CreatePersona(persona=None, success=False, message="Ya existe una persona con ese código")
             persona = Persona.objects.create(
-                unidad=unidad,
                 codigo=codigo,
                 nombres=nombres,
                 apellidos=apellidos,
-                ci=ci,
+                ci=ci or '',
                 email=email,
-                telefono=telefono,
+                telefono=telefono or '',
             )
             return CreatePersona(persona=persona, success=True, message="Persona creada exitosamente")
         except Exception as e:
             return CreatePersona(persona=None, success=False, message=str(e))
 
-
-class UpdatePersona(graphene.Mutation):
-    class Arguments:
-        id = graphene.Int(required=True)
-        codigo = graphene.String()
-        nombres = graphene.String()
-        apellidos = graphene.String()
-        ci = graphene.String()
-        email = graphene.String()
-        telefono = graphene.String()
-
-    persona = graphene.Field(PersonaType)
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, id, codigo=None, nombres=None, apellidos=None, ci=None, email=None, telefono=None):
+    @strawberry.mutation
+    def update_persona(
+        self,
+        id: int,
+        codigo: Optional[str] = None,
+        nombres: Optional[str] = None,
+        apellidos: Optional[str] = None,
+        ci: Optional[str] = None,
+        email: Optional[str] = None,
+        telefono: Optional[str] = None,
+    ) -> UpdatePersona:
         try:
             persona = Persona.objects.filter(id=id).first()
             if not persona:
                 return UpdatePersona(persona=None, success=False, message="Persona no encontrada")
             if codigo is not None:
-                if Persona.objects.filter(codigo=codigo, unidad=persona.unidad).exclude(id=id).exists():
-                    return UpdatePersona(persona=None, success=False, message="Ya existe otra persona con ese código en esta unidad")
+                if Persona.objects.filter(codigo=codigo).exclude(id=id).exists():
+                    return UpdatePersona(persona=None, success=False, message="Ya existe otra persona con ese código")
                 persona.codigo = codigo
             if nombres is not None:
                 persona.nombres = nombres
@@ -77,15 +87,8 @@ class UpdatePersona(graphene.Mutation):
         except Exception as e:
             return UpdatePersona(persona=None, success=False, message=str(e))
 
-
-class DeletePersona(graphene.Mutation):
-    class Arguments:
-        id = graphene.Int(required=True)
-
-    success = graphene.Boolean()
-    message = graphene.String()
-
-    def mutate(self, info, id):
+    @strawberry.mutation
+    def delete_persona(self, id: int) -> DeletePersona:
         try:
             persona = Persona.objects.filter(id=id).first()
             if not persona:
@@ -94,9 +97,3 @@ class DeletePersona(graphene.Mutation):
             return DeletePersona(success=True, message="Persona eliminada exitosamente")
         except Exception as e:
             return DeletePersona(success=False, message=str(e))
-
-
-class Mutation(graphene.ObjectType):
-    create_persona = CreatePersona.Field()
-    update_persona = UpdatePersona.Field()
-    delete_persona = DeletePersona.Field()

@@ -1,0 +1,59 @@
+from apps.documentos.models import Documento, TipoDocumento
+from apps.personas.models import Persona
+
+
+class DatosGraphQL:
+    """Datos minimos para ejercitar las queries y mutaciones (single-tenant)."""
+
+    @classmethod
+    def crear(cls):
+        # Los seeds historicos (17 tipos) compiten en el scoring global: se
+        # desactivan para que los tests de clasificacion sean deterministicos.
+        TipoDocumento.objects.all().update(activo=False)
+
+        persona = Persona.objects.create(
+            codigo='310000001',
+            nombres='Juan',
+            apellidos='Perez',
+            ci='1234567',
+        )
+        Persona.objects.create(
+            codigo='310000002',
+            nombres='Maria',
+            apellidos='Lopez',
+        )
+
+        tipo = TipoDocumento.objects.create(
+            nombre='Certificado de Nacimiento',
+            slug='certificado-de-nacimiento',
+            palabras_clave='certificado,nacimiento:3',
+        )
+        TipoDocumento.objects.create(
+            nombre='Comprobante de Pago',
+            slug='comprobante-de-pago',
+            palabras_clave='comprobante,pago',
+            activo=False,
+        )
+
+        clasificado = Documento.objects.create(
+            persona=persona,
+            tipo_documento=tipo,
+            archivo_original='originales/1.pdf',
+            pagina_numero=1,
+            texto_extraido='CERTIFICADO DE NACIMIENTO',
+            estado='clasificado',
+        )
+        pendiente = Documento.objects.create(
+            persona=persona,
+            archivo_original='originales/1.pdf',
+            pagina_numero=2,
+            texto_extraido='texto sin coincidir',
+            estado='pendiente',
+        )
+
+        return {
+            'persona': persona,
+            'tipo': tipo,
+            'clasificado': clasificado,
+            'pendiente': pendiente,
+        }

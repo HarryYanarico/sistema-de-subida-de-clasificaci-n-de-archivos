@@ -1,0 +1,174 @@
+type AsignarDocumento {
+  documento: DocumentoType
+  success: Boolean!
+  message: String!
+}
+
+type ClasificarDocumento {
+  documento: DocumentoType
+  success: Boolean!
+  message: String!
+}
+
+type CrearYAsignarTipo {
+  tipoDocumento: TipoDocumentoType
+  documento: DocumentoType
+  success: Boolean!
+  message: String!
+}
+
+type CreatePersona {
+  persona: PersonaType
+  success: Boolean!
+  message: String!
+}
+
+type CreateTipoDocumento {
+  tipoDocumento: TipoDocumentoType
+  success: Boolean!
+  message: String!
+}
+
+type CreateUser {
+  user: UserType
+  success: Boolean!
+  message: String!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+type DeletePersona {
+  success: Boolean!
+  message: String!
+}
+
+type DeleteTipoDocumento {
+  success: Boolean!
+  message: String!
+}
+
+type DocumentoByPersona {
+  personaId: Int!
+  documentos: [DocumentoType!]!
+  totalPaginas: Int!
+  clasificados: Int!
+  pendientes: Int!
+}
+
+type DocumentoType {
+  persona: PersonaType!
+  tipoDocumento: TipoDocumentoType
+  id: ID!
+  archivoOriginal: String!
+  archivoPagina: String
+  paginaNumero: Int!
+  textoExtraido: String!
+  estado: String!
+  score: Float
+  keywordsMatcheadas: JSON!
+  historialClasificacion: JSON!
+  phash: String
+  createdAt: DateTime!
+  duplicadoDe: ID
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
+"""
+scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
+
+type LoginUser {
+  user: UserType
+  token: String
+  success: Boolean!
+  message: String!
+}
+
+type Mutation {
+  createPersona(codigo: String!, nombres: String!, apellidos: String!, ci: String = null, email: String = null, telefono: String = null): CreatePersona!
+  updatePersona(id: Int!, codigo: String = null, nombres: String = null, apellidos: String = null, ci: String = null, email: String = null, telefono: String = null): UpdatePersona!
+  deletePersona(id: Int!): DeletePersona!
+  createTipoDocumento(nombre: String!, palabrasClave: String!, keywordsObligatorias: [String!] = null): CreateTipoDocumento!
+  updateTipoDocumento(id: Int!, nombre: String = null, palabrasClave: String = null, keywordsObligatorias: [String!] = null, activo: Boolean = null): UpdateTipoDocumento!
+  deleteTipoDocumento(id: Int!): DeleteTipoDocumento!
+  asignarDocumento(documentoId: Int!, tipoDocumentoId: Int!): AsignarDocumento!
+  clasificarDocumento(documentoId: Int!): ClasificarDocumento!
+  reclasificarDocumento(documentoId: Int!, tipoDocumentoId: Int!): ReclasificarDocumento!
+  crearYAsignarTipo(documentoId: Int!, nombre: String!, palabrasClave: String!): CrearYAsignarTipo!
+  loginUser(username: String!, password: String!): LoginUser!
+  createUser(username: String!, password: String!, email: String!, firstName: String!, lastName: String!, role: String = null, telefono: String = null): CreateUser!
+}
+
+type PersonaConnection {
+  items: [PersonaType!]!
+  total: Int!
+  page: Int!
+  totalPages: Int!
+}
+
+type PersonaType {
+  id: ID!
+  codigo: String!
+  nombres: String!
+  apellidos: String!
+  ci: String!
+  email: String
+  telefono: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  totalDocumentos: Int!
+  documentosClasificados: Int!
+  porcentajeCompletado: Float!
+  tieneDocumentosClasificados: Boolean!
+}
+
+type Query {
+  personas(search: String = null, page: Int = 1, limit: Int = 10): PersonaConnection!
+  persona(id: Int!): PersonaType
+  tiposDocumento(activo: Boolean = null): [TipoDocumentoType!]!
+  tipoDocumento(id: Int!): TipoDocumentoType
+  documentosPersona(personaId: Int!): DocumentoByPersona!
+  documentosPendientes: [DocumentoType!]!
+  documentosDudosos(limit: Int = null, offset: Int! = 0): [DocumentoType!]!
+  documentosSinClasificar(limit: Int = null, offset: Int! = 0): [DocumentoType!]!
+  documentosDuplicados(limit: Int = null, offset: Int! = 0): [DocumentoType!]!
+}
+
+type ReclasificarDocumento {
+  documento: DocumentoType
+  success: Boolean!
+  message: String!
+}
+
+type TipoDocumentoType {
+  id: ID!
+  nombre: String!
+  slug: String!
+  palabrasClave: String!
+  keywordsObligatorias: JSON!
+  activo: Boolean!
+  createdAt: DateTime!
+}
+
+type UpdatePersona {
+  persona: PersonaType
+  success: Boolean!
+  message: String!
+}
+
+type UpdateTipoDocumento {
+  tipoDocumento: TipoDocumentoType
+  success: Boolean!
+  message: String!
+}
+
+type UserType {
+  id: ID!
+  username: String!
+  firstName: String!
+  lastName: String!
+  email: String!
+  role: String!
+  telefono: String!
+}

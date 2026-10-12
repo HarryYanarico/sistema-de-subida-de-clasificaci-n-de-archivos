@@ -4,13 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, FileText, Clock, CheckCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { useUnidad } from '@/contexts/UnidadContext'
 
 export function Dashboard() {
-  const { unidadActiva } = useUnidad()
   const { data } = useQuery(GET_PERSONAS, {
-    variables: { unidadId: Number(unidadActiva?.id) || 0, page: 1, limit: 10 },
-    skip: !unidadActiva,
+    variables: { page: 1, limit: 10 },
   })
 
   const totalPersonas = data?.personas?.total || 0

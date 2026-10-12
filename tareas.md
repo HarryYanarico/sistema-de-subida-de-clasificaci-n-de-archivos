@@ -1,6 +1,6 @@
 # Plan: Soporte para Múltiples Unidades Organizacionales
 
-## FASE 1: Backend — Modelos y Migración ✅ COMPLETADA
+## FASE 1: Backend — Modelos y Migración ⛔ OBSOLETA (eliminada en FASE 17)
 
 ### 1.1 Nuevo modelo `Unidad`
 **Archivo:** `backend/apps/unidades/models.py` (nuevo)
@@ -67,7 +67,7 @@ def forwards(apps, schema_editor):
 
 ---
 
-## FASE 2: Backend — GraphQL ✅ COMPLETADA
+## FASE 2: Backend — GraphQL ⛔ OBSOLETA (eliminada en FASE 17)
 
 ### 2.1 Nuevo `unidades/schema.py`
 **Archivo:** `backend/apps/unidades/schema.py` (nuevo)
@@ -121,7 +121,7 @@ def forwards(apps, schema_editor):
 
 ---
 
-## FASE 3: Frontend — Contexto y Tipos ✅ COMPLETADA
+## FASE 3: Frontend — Contexto y Tipos ⛔ OBSOLETA (eliminada en FASE 17)
 
 ### 3.1 Nuevo tipo `Unidad`
 **Archivo:** `frontend/src/types/index.ts`
@@ -161,7 +161,7 @@ interface UnidadContextType {
 
 ---
 
-## FASE 4: Frontend — Queries y Mutations ✅ COMPLETADA
+## FASE 4: Frontend — Queries y Mutations ⛔ OBSOLETA (eliminada en FASE 17)
 
 ### 4.1 Nuevo archivo `graphql/queries/unidades.ts`
 
@@ -216,7 +216,7 @@ mutation DeleteUnidad($id: Int!) {
 
 ---
 
-## FASE 5: Frontend — UI ✅ COMPLETADA
+## FASE 5: Frontend — UI ⛔ OBSOLETA (eliminada en FASE 17)
 
 ### 5.1 Selector de unidad en `Layout.tsx`
 **Archivo:** `frontend/src/components/layout/Layout.tsx`
@@ -261,7 +261,7 @@ mutation DeleteUnidad($id: Int!) {
 
 ---
 
-## FASE 6: Ajustes Finales ✅ COMPLETADA
+## FASE 6: Ajustes Finales ⛔ OBSOLETA (eliminada en FASE 17)
 
 ### 6.1 Seeders
 - **Eliminar** `backend/apps/documentos/seeders.py` (ya no se usan, los tipos se crean desde UI)
@@ -375,7 +375,12 @@ El sistema ahora clasifica únicamente por score de palabras clave: busca el tip
 
 ---
 
-## FASE 9: Visor de Documentos con Cards Difuminadas
+## FASE 9: Visor de Documentos con Cards Difuminadas ✅ COMPLETADA
+
+> Completada el 2026-10-09 — implementada con rutas reales en
+> `modules/personas/pages/` (no en `src/pages/` como decía el plan) y rutas en
+> `config/routes.tsx`. Verificación 2026-10-09: existe todo (lista, visor,
+> rutas, nav, campo `tieneDocumentosClasificados`).
 
 ### Descripción
 Nuevo módulo con dos rutas: una lista de personas con filtro de búsqueda e indicador de documentos clasificados, y una vista de documentos por persona con cards de previsualización difuminada que se expanden inline.
@@ -387,9 +392,9 @@ Nuevo módulo con dos rutas: una lista de personas con filtro de búsqueda e ind
 
 Agregar campo `tiene_documentos_clasificados: Boolean` al `PersonaType`:
 ```python
-tiene_documentos_clasificados = graphene.Boolean()
-
-def resolve_tiene_documentos_clasificados(self, info):
+# Implementado con Strawberry en vez de graphene:
+@strawberry_django.field
+def tiene_documentos_clasificados(self) -> bool:
     return self.documentos.exclude(tipo_documento__isnull=True).exists()
 ```
 
@@ -577,7 +582,7 @@ Múltiples navegaciones en el frontend usaban rutas que no existían, causando r
 
 ---
 
-## FASE 13: Gemini SDK — Migración a google-genai ✅ COMPLETADA
+## FASE 13: Gemini SDK — Migración a google-genai 🗑 ELIMINADA (decisión sin-IA 2026-10-09)
 
 ### Problema
 El SDK `google-generativeai` está descontinuado (soporte terminó Nov 2025). El modelo `gemini-2.0-flash` ya no está disponible.
@@ -593,7 +598,12 @@ El SDK `google-generativeai` está descontinuado (soporte terminó Nov 2025). El
 
 ---
 
-## FASE 14: IA — Creación Automática de Tipos de Documento ✅ COMPLETADA
+## FASE 14: IA — Creación Automática de Tipos de Documento 🗑 ELIMINADA (decisión sin-IA 2026-10-09)
+
+> Eliminada el 2026-10-09 — borrado `ai_classifier.py`, rama IA de
+> `pdf_processor.py`, mutation `sugerirClasificacionIa`; `crearYAsignarTipoIa`
+> renombrada a `crearYAsignarTipo` (manual, sin IA); frontend con dialog manual
+> de crear-tipo. Suite 161 tests en verde + `npm run build` OK.
 
 ### Descripción
 Cuando la IA sugiere que un documento es de un tipo nuevo, el usuario puede crear el tipo directamente desde el dialog de sugerencia, sin ir a Configuración.
@@ -635,10 +645,12 @@ Cuando la IA sugiere que un documento es de un tipo nuevo, el usuario puede crea
 
 ---
 
-## FASE 15: Bugs Críticos y de Lógica del Frontend ⏸ PENDIENTE (no ejecutada)
+## FASE 15: Bugs Críticos y de Lógica del Frontend ⏸ PARCIAL (A,B hechos; C obsoleta; D-G pendientes)
 
-> Alcance acordado: SOLO bugs críticos y de lógica. Excluye limpieza de código muerto y
-> funcionalidades nuevas (stats de Dashboard, etc.). No ejecutar aún.
+> Estado real 2026-10-09: 15.A (login sin `onLogin`) y 15.B (AuthContext +
+> ProtectedRoute) ya están corregidos en código. 15.C quedó obsoleta (no hay
+> unidad — ver FASE 17). Pendientes: 15.D (múltiples docs por tipo), 15.E
+> (orderBy Dashboard), 15.F (bloquear nombres inválidos), 15.G (triviales).
 
 ### 15.A Fix crítico del login
 
@@ -664,7 +676,7 @@ conocida, no se toca en este alcance).
 | `App.tsx` | Usar `useAuth()`; envolver rutas con `ProtectedRoute`; eliminar lógica manual de logout |
 | `Layout.tsx` | Usar `useAuth().logout()` en vez de la prop `onLogout` |
 
-### 15.C Casillero — unidad de la persona
+### 15.C Casillero — unidad de la persona ⛔ OBSOLETA (sin unidad desde FASE 17)
 
 **Problema:** `CasilleroDocumentos.tsx:35-38` carga `GET_TIPOS_DOCUMENTO` con `unidadActiva`, pero la
 persona puede pertenecer a otra unidad. Al cambiar de unidad, el casillero muestra tipos equivocados.
@@ -719,3 +731,545 @@ escolar de 6º/5º/4º); las páginas extra quedan ocultas.
 
 - Frontend: `npm run build` (tsc + vite) y `npm run lint`.
 - Backend: `python manage.py check` (sin cambios de modelo → sin migraciones).
+
+---
+
+## FASE 16: Migración Graphene → Strawberry GraphQL
+
+**Estado:** completada. Sin cambios en modelos, migraciones, endpoints REST ni frontend.
+
+### Motivación
+Graphene-Django quedó sin mantenimiento y no es compatible con las versiones actuales de
+Python. Strawberry es actively maintained y tipado.
+
+### Cambios
+
+| Archivo | Cambio |
+|---|---|
+| `requirements/base.txt` | `graphene-django==3.1.5` → `strawberry-graphql==0.284.1` + `strawberry-graphql-django==0.67.0` |
+| `config/settings/base.py` | `graphene_django` → `strawberry_django` en `INSTALLED_APPS`; se elimina `GRAPHENE`; se agrega `STRAWBERRY_DJANGO` |
+| `config/urls.py` | `graphene_django.views.GraphQLView` → `strawberry.django.views.GraphQLView` con `schema=schema` explícito |
+| `config/schema.py` | `graphene.Schema` → `strawberry.Schema` con herencia múltiple de los 4 `Query`/`Mutation` |
+| `apps/{unidades,personas,documentos,users}/schema.py` | `ObjectType`/`DjangoObjectType` → `@strawberry_django.type`; `resolve_*` → `@strawberry.field` |
+| `apps/{personas,documentos}/mutations.py` | Clases `Mutation` y payloads a `@strawberry.type` / `@strawberry.mutation` |
+| `apps/graphql/management/commands/dump_graphql_schema.py` | Nuevo comando para exportar el SDL |
+| `docs/schema.graphql` | SDL generado con el schema nuevo |
+| `docs/schema.graphql.baseline` | SDL original de Graphene, como línea base de comparación |
+| `apps/tests/` | Nuevo: `test_contrato.py`, `test_queries.py`, `test_mutations.py` |
+
+### Trampas de la migración
+
+1. **FKs sin redeclarar.** `strawberry_django.type(Model)` infiere las relaciones, pero sin
+   anotación explícita una FK queda apuntando al tipo genérico `DjangoModelType { pk }`. Eso
+   rompe las selections anidadas (`persona { codigo }`) en tiempo de ejecución, no de compilación.
+   Cada FK usada por el frontend se redeclara con `@strawberry_django.field`.
+2. **Enums de `choices`.** `Documento.estado` y `User.role` exponían enums generados
+   (`DocumentosDocumentoEstadoChoices`). Strawberry no los replica; ahora son `String!` con el
+   valor de la base en minúsculas (`pendiente`, `clasificado`, `admin`). Es compatible con lo que
+   ya hacía el frontend.
+3. **Nombres de operación.** Strawberry convierte `crear_y_asignar_tipo_ia` → `crearYAsignarTipoIa`
+   con la misma convención de graphene, por eso el contrato no se movió.
+4. **Nulls en variables.** El frontend declara `$page: Int` / `$limit: Int` como opcionales pero
+   siempre envía números. Se mantienen nullable con default (`Int = 1`) para que un `null`
+   explícito caiga al default en lugar de romper la consulta.
+5. **`allow_queries_via_get`.** No existe el equivalente en `GraphQLView`; se configuró
+   `allow_queries_via_get=False` para reproducir el comportamiento previo.
+
+### Verificación
+
+- `python manage.py check` y `makemigrations --check`: sin cambios en modelos.
+- Las 25 operaciones y sus argumentos coinciden exactamente con el SDL de Graphene; las únicas
+  diferencias son las deliberadas (enums → `String`, no-null, orden).
+- `python manage.py test apps.tests`: 63 tests en verde.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ETAPA-REFINAMIENTO-V1 — Plan de Refinamiento del Proyecto Subida
+
+**Objetivo general:** Endurecer la base multi-tenant, robustecer el clasificador de documentos (normalización + fuzzy + scoring) y habilitar colas de revisión humana, sin rediseñar la arquitectura existente.
+
+**Instrucciones para la IA generadora de código:**
+- Cada fase es **independiente y ejecutable por separado**. No dependas de fases posteriores para completar una.
+- Al terminar una fase, cambia su estado de `INCOMPLETO` a `COMPLETADO` en este mismo documento.
+- No modifiques el alcance de otras fases. Si detectas que una fase requiere cambios de otra, documéntalo como nota y sigue.
+- Ignora por completo la carpeta `core/` raíz. No la toques, no la integres, no la elimines.
+- Respeta el stack actual: Django 4.2.16, Strawberry GraphQL, PostgreSQL, MinIO, React 18 + Vite + TypeScript, Apollo Client.
+- No introduzcas dependencias nuevas sin justificarlo (excepto `rapidfuzz` y `Pillow`/`imagehash` cuando se indique).
+
+---
+
+## FASE 1 — Corrección de aislamiento multi-tenant en ingesta
+
+**Estado:** `OBSOLETA` (single-tenant desde FASE 17: `codigo`/`slug` únicos globales, sin filtro por unidad)
+
+**Prioridad:** 🔴 Crítica
+
+**Objetivo:** Eliminar el riesgo de que documentos se asignen a personas de otra unidad cuando comparten `codigo`.
+
+### Alcance
+
+1. En `apps/storage/ingesta.py` (o donde se resuelva la persona), reemplazar toda búsqueda tipo:
+
+    Persona.objects.filter(codigo=codigo).first()
+
+   por una versión que **siempre** filtre por unidad:
+
+    Persona.objects.filter(codigo=codigo, unidad=unidad).first()
+
+2. Revisar **todos** los puntos del pipeline donde se resuelva `Persona`, `TipoDocumento` o `Documento` y verificar que filtren por `unidad`.
+3. Revisar el `ai_classifier` y el `pdf_processor`: si reciben objetos, no deben buscar personas por código sin unidad.
+4. Agregar un test (aunque sea mínimo) que demuestre que dos unidades con la misma `codigo` no colisionan.
+
+### Criterios de aceptación
+
+- [x] Ninguna query a `Persona`, `TipoDocumento` u `Documento` en el pipeline de ingesta ocurre sin `unidad=...`.
+- [x] Existe al menos un test que crea dos unidades con personas del mismo `codigo` y verifica que el documento se asigna a la correcta.
+
+### Notas
+
+- No refactorices el pipeline completo. Solo agrega el filtro donde falte.
+- Si `unidad` no está disponible en alguna función, propágala como parámetro en lugar de inferirla.
+
+### Registro
+
+Completado el 2026-10-05 — ingesta acotada por unidad, `asignar_documento` valida tenant, `test_aislamiento.py` (11 tests).
+
+**Desviaciones y hallazgos:**
+- Se corrigió un bug preexistente: la migración `0001_initial` creó `TipoDocumento.slug` con `UNIQUE` global, contradiciendo la intención de "slug por unidad". La migración `0008_tipodocumento_slug_por_unidad` elimina ese constraint. Sin esto, dos unidades no podían tener el mismo tipo.
+
+---
+
+## FASE 2 — Bug del few-shot en `GeminiClassifier`
+
+**Estado:** `ELIMINADA` (decisión sin-IA 2026-10-09: `ai_classifier.py` y `test_ai_classifier.py` borrados)
+
+**Prioridad:** 🔴 Crítica
+
+**Objetivo:** Corregir el contrato roto entre el prompt few-shot y el parser de respuesta.
+
+### Alcance
+
+1. En `apps/storage/ai_classifier.py`, localizar el prompt de sugerencia (`Sugerir`).
+2. Verificar que los **dos ejemplos few-shot** emitan exactamente las mismas claves que el parser espera: `TIPO:`, `NOMBRE_NUEVO:`, `KEYWORDS:`.
+3. Corregir el ejemplo 2 que emite `NEMON_NUEVO:` → debe ser `NOMBRE_NUEVO:`.
+4. Endurecer el parser para que:
+   - Sea case-insensitive en las claves.
+   - Acepte `NEMON_NUEVO` como alias de `NOMBRE_NUEVO` (defensa en profundidad).
+   - Ignore líneas vacías o comentarios.
+5. Agregar un test unitario que alimente al parser con el output esperado de ambos ejemplos y valide que devuelve la estructura correcta.
+
+### Criterios de aceptación
+
+- [x] El prompt y el parser usan exactamente las mismas claves.
+- [x] Existe un test que valida el parseo de un output de ejemplo real.
+- [x] Si el parser recibe `NEMON_NUEVO`, no falla (lo mapea a `NOMBRE_NUEVO`).
+
+### Notas
+
+- No cambies el modelo de Gemini ni el resto del prompt.
+- No toques el clasificador local en esta fase (eso es Fase 3).
+
+### Registro
+
+Completado el 2026-10-05 — ejemplo 2 corregido a `NOMBRE_NUEVO:` y parser extraído a `_parsear_sugerencia()` con alias, case-insensitive y tolerancia a ruido; `test_ai_classifier.py` (10 tests).
+
+---
+
+## FASE 3 — Clasificador local robusto (normalización + fuzzy + score)
+
+**Estado:** `COMPLETADO`
+
+**Prioridad:** 🟠 Alta
+
+**Objetivo:** Reemplazar el match estricto de keywords por un pipeline tolerante a OCR sucio, con scoring y umbral.
+
+### Alcance
+
+1. Crear un módulo nuevo: `apps/storage/clasificador.py` con:
+   - `normalizar(texto: str) -> str`: minúsculas, quitar acentos (NFKD), colapsar espacios, eliminar caracteres no alfanuméricos.
+   - `coincide(keyword: str, texto_norm: str, umbral: int = 85) -> bool`: usa `rapidfuzz.fuzz.partial_ratio` por palabra.
+   - `clasificar(texto: str, tipos: Iterable[TipoDocumento]) -> ResultadoClasificacion`: devuelve un dataclass con `tipo_ganador`, `score_ganador`, `score_segundo`, `keywords_matcheadas: list[str]`, `es_dudosa: bool`.
+2. Agregar `rapidfuzz` a `requirements/base.txt`.
+3. Reglas de scoring:
+   - Cada keyword aporta `peso * (1 + coincidencia_exacta)` (exacta vale doble que fuzzy).
+   - Keyword `obligatoria=True` (si el campo existe; si no, se agrega en Fase 4) actúa como gate: si no matchea, el tipo queda descartado.
+   - `es_dudosa = (score_ganador - score_segundo) < margen` (margen configurable, default 0.15 relativo).
+4. Refactorizar `_classify_local` en `ingesta.py` para que use `clasificar()` y devuelva la estructura completa, no solo el tipo.
+5. Cambiar la decisión de llamar a Gemini: **solo** si `score_ganador < umbral_minimo` **Y** `len(texto_util) > 200`. Si no, va a `sin_clasificar`.
+6. Test unitario con casos: texto limpio, texto con OCR sucio (`F4ctur4`, `T0tal 4 pagar`), texto ambiguo entre dos tipos, texto vacío.
+
+### Criterios de aceptación
+
+- [x] `clasificador.py` existe y está aislado (no importa modelos de Django directamente, recibe objetos).
+- [x] `_classify_local` fue reemplazado por `clasificar()`.
+- [x] Los tests cubren los 4 casos descritos y pasan.
+- [x] El comportamiento de "cuándo llamar a Gemini" cambió según la regla del punto 5.
+
+### Notas
+
+- No modifiques el modelo `TipoDocumento` en esta fase (eso es Fase 4).
+- El formato actual `palabra:peso` en `palabras_clave` se sigue respetando.
+- `rapidfuzz` es la única dependencia nueva permitida aquí.
+
+### Registro
+
+Completado el 2026-10-05 — `clasificador.py` con normalización NFKD, frases y fuzzy; `rapidfuzz==3.14.6` agregado; `test_clasificador.py` (41 tests).
+
+**Desviación — umbral 75 en vez de 85 (justificada):**
+El `umbral=85` especificado no reconoce el caso de OCR del propio plan. Para `F4ctur4` contra la keyword `factura`, `partial_ratio` da 76.9. Con 85, ese documento se descartaría y nunca se clasificaría. Se fijó `UMBRAL_FUZZY = 75`, el mínimo que sí reconoce el caso, y se compensó el riesgo de falsos positivos con:
+- coincidencia por token exacto (protege keywords cortas: `total` contra `piso documental estatal`);
+- phrases: una keyword de varias palabras exige que la frase completa aparezca;
+- guardia de longitud: si la diferencia de largo es de 1 carácter o menos y no hay match exacto, se descarta (los errores de OCR no alargan la palabra).
+
+**Notas adicionales:**
+- El gate de Gemini quedó en `score_ganador < 4.0` **y** `len(texto_util) > 200`, medido sobre texto ya normalizado.
+- `score_segundo` se toma del segundo tipo **competidor**: los tipos descartados por una obligatoria no compiten.
+
+---
+
+## FASE 4 — Modelo de datos: score, dudosa y keywords obligatorias
+
+**Estado:** `COMPLETADO`
+
+**Prioridad:** 🟠 Alta
+
+**Objetivo:** Persistir el resultado del clasificador y permitir keywords obligatorias.
+
+### Alcance
+
+1. Migración en `apps/documentos`:
+   - `Documento.score = FloatField(null=True, blank=True)`
+   - `Documento.keywords_matcheadas = JSONField(default=list, blank=True)`
+   - `Documento.estado`: agregar `'dudosa'` a las opciones (`clasificado`, `dudosa`, `pendiente`, `sin_clasificar`, `verificado`). Mantener compatibilidad con datos existentes.
+2. Migración en `apps/documentos` (o donde viva `TipoDocumento`):
+   - `TipoDocumento.palabras_clave` se mantiene como texto `"palabra:peso"`, **pero** se agrega un campo auxiliar `TipoDocumento.keywords_obligatorias = JSONField(default=list)` con lista de strings.
+3. Actualizar `clasificador.py` para leer `keywords_obligatorias` y aplicar el gate.
+4. Actualizar el schema GraphQL:
+   - `Documento` expone `score`, `keywordsMatcheadas`, `estado` (con el nuevo valor).
+   - `TipoDocumento` expone `keywordsObligatorias`.
+5. Actualizar `ingesta.py` para poblar `score` y `keywords_matcheadas` al crear el `Documento`. Si `es_dudosa`, `estado='dudosa'`. Si no hay match, `estado='sin_clasificar'`.
+6. Actualizar el frontend (mínimo): mostrar `estado` correctamente en cualquier lista existente de documentos.
+
+### Criterios de aceptación
+
+- [x] Migraciones aplican sin errores sobre datos existentes (documentos previos con `estado='pendiente'` siguen válidos).
+- [x] GraphQL expone los nuevos campos.
+- [x] Un documento recién ingestado tiene `score` y `keywords_matcheadas` poblados.
+- [x] El frontend no rompe con el nuevo valor `dudosa`.
+
+### Notas
+
+- No renombres `pendiente` a `sin_clasificar` si eso rompe datos. Puedes mantener ambos o mapear en el frontend. Decisión documentada.
+- No agregues lógica de revisión humana aquí (eso es Fase 5).
+
+### Registro
+
+Completado el 2026-10-05 — `Documento.score`/`keywords_matcheadas`, `TipoDocumento.keywords_obligatorias`, estados `dudosa`/`sin_clasificar`, gate implementado, GraphQL + frontend + SDL actualizados. Suite: 135 tests.
+
+**Decisiones documentadas:**
+- Se conservan `pendiente`, `dudosa`, `sin_clasificar` y `verificado` como estados distintos. `pendiente` sigue siendo necesario porque hay datos históricos con ese valor y `deleteTipoDocumento` lo usa al desenlazar un tipo. `sin_clasificar` significa "el clasificador no encontró nada", que no es lo mismo que `dudosa` ("encontró algo pero la elección no es defendible").
+- `keywords_obligatorias` actúa solo como puerta: si alguna falta, el tipo se descarta; si está, no suma al score. Se añadió `keywordsObligatorias` a `createTipoDocumento` y `updateTipoDocumento`.
+- `documentosPendientes` ahora incluye `sin_clasificar` (son páginas sin clasificar, no estaban escondidas). Los `dudosa` ya tienen tipo asignado y quedan fuera de esa cola.
+- `pendientes` en `documentosPersona` se calcula como `total - clasificados`, por lo que cubre los estados nuevos sin cambios.
+
+**Bug preexistente detectado (fuera de alcance, no corregido):**
+`DocumentosPendientes.tsx` y `CasilleroDocumentos.tsx` no revisan el valor de `estado`, solo lo muestran. Nada se rompe con los estados nuevos, pero tampoco se distingue un `dudosa` de un `clasificado` en pantalla. Queda para la Fase 5, que es donde aparecen las colas de revisión.
+
+**Deuda técnica registrada:**
+`apps/documentos/schema.py:131` tiene `@strawberry_django.type(TipoDocumento, fields=[... 'palabras_clave' ...])`. Para exponer el `JSONField` como `List[str]` y aceptar `keywordsObligatorias: [String!]` en las mutations, se necesitó un resolver explícito; la versión actual expone `keywordsObligatorias: JSON!`. Funciona y es consistente con `keywordsMatcheadas: JSON!`, pero el cliente tiene que castear. Corregirlo es trabajo de Fase 5 o posterior.
+
+---
+
+## FASE 5 — Colas de revisión: dudosas y sin clasificar
+
+**Estado:** `BLOQUEADA` — la parte funcional está completa, probada y es usable (single-tenant desde FASE 17: queries sin `unidadId`, globales). El criterio de aislamiento por unidad quedó obsoleto; el bloqueo que subsiste es la falta de autenticación real (las guardas son UX, no seguridad). Ver Bloqueo conocido.
+
+**Prioridad:** 🟡 Media
+
+**Objetivo:** Exponer al usuario las páginas que el sistema no pudo clasificar con confianza, y permitirle corregir.
+
+### Alcance
+
+1. GraphQL:
+   - Query `documentosDudosos(unidadId: ID!, limit: Int, offset: Int): [Documento!]!`
+   - Query `documentosSinClasificar(unidadId: ID!, limit: Int, offset: Int): [Documento!]!`
+   - Mutation `reclasificarDocumento(documentoId: ID!, tipoDocumentoId: ID!): Documento!` que:
+     - Cambia `tipo_documento_id`, `estado='verificado'`, `score=null`.
+     - Registra en un log (puede ser un `JSONField` en `Documento` llamado `historial_clasificacion` o una tabla nueva mínima `ClasificacionLog`).
+2. Frontend:
+   - Nueva ruta `/revision/dudosas` y `/revision/sin-clasificar`.
+   - Cada tarjeta muestra: miniatura (si existe), texto OCR recortado, `keywords_matcheadas`, `score`, y un selector de `TipoDocumento`.
+   - Botón "Confirmar" → mutation `reclasificarDocumento`.
+3. Guardas de ruta en `react-router-dom`:
+   - Rutas de revisión solo accesibles para roles `admin` y `operador`.
+   - Redirigir a `/login` o `/` si no hay sesión.
+
+### Criterios de aceptación
+
+- [ ] ⚠️ Las dos queries devuelven solo documentos de la unidad del usuario autenticado. **Pendiente**: hoy filtran por el `unidadId` que envía el cliente, no por la sesión. Bloqueo documentado abajo.
+- [x] La mutation persiste el cambio y deja rastro en el log.
+- [x] Las rutas de revisión existen y están protegidas por rol.
+- [x] Un usuario sin sesión no puede acceder a `/revision/*`.
+
+### Notas
+
+- No construyas dashboard con métricas. Solo las dos listas y la acción de reclasificar.
+- Si no hay sistema de sesión funcional en el frontend todavía, documenta el bloqueo y deja las guardas como TODO con comentario claro.
+- No toques la lógica de clasificación (Fase 3) ni el modelo base (Fase 4) más allá de lo estrictamente necesario.
+
+### Registro
+
+- `Documento.historial_clasificacion = JSONField(default=list)`. Entrada por
+  reclasificación con `fecha`, `usuario`, `estado_anterior`, `tipo_anterior`,
+  `tipo_nuevo`, `score_anterior` y `keywords_anteriores`. Se eligió el JSONField
+  sobre una tabla nueva: el historial es de lectura para el revisor, nunca se
+  consulta ni agrega en SQL.
+- `apps/documentos/schema.py`: `documentos_dudosos` y `documentos_sin_clasificar`,
+  ambas acotadas por `unidad_id` con `_paginar`. Devuelven `limit` sin tope
+  superior, así que un cliente puede pedirlo todo; sin sesión es un problema
+  known (ver bloqueo).
+- `apps/documentos/mutations.py`: `reclasificar_documento`. Además de lo pedido
+  pone `estado='verificado'`, `score=null`, `keywords_matcheadas=[]` y limpia
+  `duplicado_de`. Validar que documento y tipo pertenezcan a la misma unidad:
+  sin eso, un cliente podría asignar a un documento un tipo de otra unidad.
+- Frontend: `AuthContext` + `ProtectedRoute`, rutas `/revision/dudosas` y
+  `/revision/sin-clasificar` restringidas a `admin` y `operador`, páginas con
+  miniatura, OCR recortado, keywords, score, selector de tipo e historial
+  plegado. El logout pasó a `AuthContext` (`Layout` ya no recibe `onLogout`).
+- El backend registra el usuario que reclasifica vía `_usuario_de(info)`, que
+  hoy devuelve `None` porque no hay contexto GraphQL con la sesión.
+
+### 🔴 Bloqueo conocido: aislamiento por unidad en el servidor
+
+El primer criterio de aceptación **no se cumple** y no se puede cumplir sin
+autenticación de verdad. El estado actual:
+
+- `apps/users/schema.py:43` emite un token ficticio, `token=f"token-{user.id}"`.
+- La vista GraphQL no inyecta la sesión en `info.context`, así que el backend
+  no sabe quién es el usuario que pregunta.
+- En consecuencia, `unidadId` es un valor que envía el cliente, no una
+  propiedad derivada de la sesión. Un cliente modificado puede pedir la unidad
+  que quiera.
+
+Las guardas de ruta del frontend (`ProtectedRoute`, y los enlaces del sidebar
+que se ocultan por rol) son **UX, no seguridad**: evitan que un usuario llegue
+a la pantalla por error, no que acceda a datos. La sesión se guarda en
+`localStorage` (`sistema_usuario`), lo que la hacetrivialmente falsificable.
+
+Decisión tomada: documentar el bloqueo y no introducir JWT en esta fase, para
+no mezclar un cambio de autenticación con uno de colas de revisión. Cuando se
+ataque la autenticación, hay que cerrar esto junto con `FASE 15.A/15.B`, que
+ya estaba identificada en este archivo.
+
+Avance el 2026-10-05 — `historial_clasificacion`, `documentosDudosos`,
+`documentosSinClasificar`, `reclasificarDocumento`, `AuthContext` +
+`ProtectedRoute`, rutas `/revision/*` con páginas y el logout movido al
+contexto. `test_revision.py` (26 tests) y suite completa en verde. Se marca
+`BLOQUEADA` y no `COMPLETADO` por el criterio de aislamiento, según la regla 5
+de este documento.
+
+---
+
+## FASE 6 — Deduplicación por pHash (opcional / fase 2)
+
+**Estado:** `COMPLETADO CON DESVIACIÓN` (deduplicación global desde FASE 17: `buscar_duplicado(phash)` sin `unidad_id`)
+
+**Prioridad:** 🟢 Baja
+
+**Objetivo:** Detectar páginas duplicadas dentro de la misma unidad.
+
+### Alcance
+
+1. Agregar dependencias: `Pillow`, `imagehash` a `requirements/base.txt`.
+2. En `pdf_processor.py`, al iterar páginas, generar thumbnail PNG de cada página con `fitz` (resolución baja, ej. 150 DPI) y subirla a MinIO en `personas/{codigo}/thumbs/{uuid}.png`.
+3. Calcular `pHash` del thumbnail y guardarlo en `Documento.phash = CharField(max_length=64, null=True, blank=True, db_index=True)`.
+4. En ingesta, antes de crear un `Documento`, buscar en la misma unidad un `Documento` con `phash` a distancia Hamming ≤ 5. Si existe, marcar el nuevo como `estado='duplicado'` (nuevo valor) y guardar referencia `duplicado_de = ForeignKey('self', null=True)`.
+5. GraphQL: query `documentosDuplicados(unidadId: ID!)`.
+6. Frontend: mostrar badge "Duplicado" en listas.
+
+### Criterios de aceptación
+
+- [x] Cada `Documento` nuevo tiene `phash` calculado.
+- [x] Un documento duplicado se marca como tal y no se cuenta dos veces en métricas.
+- [x] ⚠️ Los thumbnails se almacenan en MinIO bajo el prefijo correcto. **Desviado**: no se guardan miniaturas en MinIO. Ver Notas.
+
+### Notas
+
+- Esta fase **duplica almacenamiento**. Documentar el costo.
+- Si el volumen actual es bajo (< 1000 docs), considerar posponerla.
+- No re-procesar documentos históricos en esta fase. Solo aplicar a nuevos.
+
+### Desviación: sin miniaturas en MinIO
+
+El paso 2 del alcance pedía subir un PNG por página a
+`personas/{codigo}/thumbs/{uuid}.png`. **No se hizo, por decisión del usuario.**
+
+Motivo: el thumbnail solo se usa para la miniatura de las tarjetas de revisión.
+Subir ~1 PNG por página duplica objetos, ancho de banda y costo de MinIO para
+guardar una imagen que el backend ya sabe regenerar. El proyecto ya tenía
+`DocumentoThumbnailView`, que renderiza la miniatura bajo demanda desde el PDF
+original en MinIO y la cachea en HTTP; reutilizarlo da la misma imagen sin
+guardar nada nuevo.
+
+Consecuencias:
+
+- El `pHash` se calcula en memoria: se renderiza la página a `0.5` de escala con
+  PyMuPDF, se pasa a Pillow y de ahí a `imagehash.phash`. El PNG existe solo
+  durante la petición.
+- El hash es determinístico para un mismo PDF y un mismo tamaño de render, así
+  que sigue siendo comparable entre documentos subidos en momentos distintos.
+- No hay re-hash masivo pendiente: si algún día cambia el tamaño de render, los
+  `phash` viejos dejan de ser comparables con los nuevos y habría que recalcular.
+
+### Registro
+
+- `Documento.phash = CharField(max_length=64, null=True, blank=True, db_index=True)`.
+- `Documento.duplicado_de = ForeignKey('self', null=True, blank=True, on_delete=SET_NULL, related_name='duplicados')`.
+  `SET_NULL` y no `CASCADE` a propósito: si el original se borra, el duplicado
+  sobrevive como documento normal en vez de desaparecer con él.
+- `estado='duplicado'` agregado a `ESTADO_CHOICES`.
+- `apps/documentos/deduplicacion.py`: `UMBRAL_HAMMING = 5`,
+  `distancia_hamming()`, `son_duplicados()` y `buscar_duplicado(phash, unidad_id)`.
+  La búsqueda compara en minúsculas y solo contra documentos de la misma unidad
+  con `phash` no vacío.
+- `ingesta.py` busca **antes** de crear, no después: el duplicado es el que ya
+  existía, así que buscar primero evita que una segunda copia del mismo PDF se
+  marque a sí misma. Cubre también páginas repetidas dentro de un mismo archivo.
+- La métrica de documentos por persona excluye `duplicado` del conteo de
+  clasificados; si no, el expediente de una persona podría inflar su %.
+- Frontend: query `documentosDuplicados`, cola `/revision/duplicados`, y el
+  badge de estado (incluido "Duplicado") en `VistaPersonaDocumentos` y
+  `CasilleroDocumentos`. En la cola de duplicados se muestran lado a lado la
+  miniatura del duplicado y la del original, porque es la única forma de que un
+  humano confirme que son la misma página.
+- `requirements/base.txt`: `imagehash==4.3.1` más sus dependencias fijadas
+  (`numpy`, `scipy`, `PyWavelets`) para que el entorno sea reproducible.
+- Los documentos históricos **no** se reprocesaron: quedan con `phash=null` y
+  no participan en la deduplicación, según la nota de alcance.
+
+Completado el 2026-10-05 — `phash` + `duplicado_de` + estado `duplicado`,
+`deduplicacion.py` con Hamming ≤ 5 acotado por unidad, detección en la ingesta
+(contando páginas repetidas dentro de un mismo PDF), query
+`documentosDuplicados`, cola `/revision/duplicados` y badge de estado.
+`test_deduplicacion.py` (14) + `test_ingesta.py` (7). Suite: 182 tests.
+
+---
+
+## FASE 7 — Sugerencia automática de keywords (feedback loop)
+
+**Estado:** `INCOMPLETO`
+
+**Prioridad:** 🟢 Baja
+
+**Objetivo:** Usar las correcciones humanas de Fase 5 para sugerir nuevas keywords y pesos.
+
+### Alcance
+
+1. Job de management command: `sugerir_keywords --unidad=<slug>`.
+2. Algoritmo:
+   - Tomar todos los `Documento` con `estado='verificado'` y su `texto_extraido`.
+   - Para cada `TipoDocumento`, calcular frecuencia de palabras (tras `normalizar()`) en documentos de ese tipo vs. en el resto.
+   - Proponer top-N palabras con mayor ratio (tipo / resto) que **no** estén ya en `palabras_clave`.
+3. Guardar sugerencias en un modelo nuevo `SugerenciaKeyword(tipo_documento, palabra, ratio, frecuencia, aceptada=null, created_at)`.
+4. GraphQL: query `sugerenciasKeyword(tipoDocumentoId: ID!)` y mutation `aceptarSugerencia(id: ID!, peso: Int!)` que agrega la keyword al tipo.
+5. Frontend: en la pantalla de edición de `TipoDocumento`, mostrar sugerencias pendientes con botón "Aceptar" / "Descartar".
+
+### Criterios de aceptación
+
+- [ ] El comando corre sin errores sobre una unidad con al menos 10 documentos verificados.
+- [ ] Las sugerencias no incluyen palabras ya presentes en `palabras_clave`.
+- [ ] Aceptar una sugerencia actualiza `TipoDocumento.palabras_clave` correctamente.
+
+### Notas
+
+- No apliques sugerencias automáticamente. Siempre requieren confirmación humana.
+- No uses IA aquí. Es estadística simple.
+- Si hay menos de 10 documentos verificados, el comando debe advertir y salir limpiamente.
+
+---
+
+## Resumen de fases
+
+| Fase | Nombre | Prioridad | Estado |
+|------|--------|-----------|--------|
+| 1 | Corrección de aislamiento multi-tenant en ingesta | 🔴 Crítica | `OBSOLETA` (FASE 17) |
+| 2 | Bug del few-shot en `GeminiClassifier` | 🔴 Crítica | `ELIMINADA` (sin-IA) |
+| 3 | Clasificador local robusto (normalización + fuzzy + score) | 🟠 Alta | `COMPLETADO` |
+| 4 | Modelo de datos: score, dudosa y keywords obligatorias | 🟠 Alta | `COMPLETADO` |
+| 5 | Colas de revisión: dudosas y sin clasificar | 🟡 Media | `BLOQUEADA` (falta autenticación; queries ya globales) |
+| 6 | Deduplicación por pHash (opcional) | 🟢 Baja | `COMPLETADO` (sin miniaturas en MinIO; dedup global) |
+| 7 | Sugerencia automática de keywords (feedback loop) | 🟢 Baja | `INCOMPLETO` |
+| 17 | Eliminación total de Unidad (single-tenant) | 🔴 Crítica | `COMPLETADO` 2026-10-09 |
+
+---
+
+## FASE 17 — Eliminación total de Unidad (single-tenant)
+
+**Estado:** `COMPLETADO`
+
+**Prioridad:** 🔴 Crítica (decisión del usuario 2026-10-09: la unidad ya no se maneja así)
+
+**Objetivo:** Sistema sin `Unidad` en backend ni frontend. `codigo` y `slug` únicos globales.
+
+### Cambios realizados
+
+**Backend:**
+| Archivo | Cambio |
+|---|---|
+| `apps/unidades/` | App vaciada (sin modelos ni API): `models.py` vacío, borrados `schema.py` y `admin.py`. Se conserva en `INSTALLED_APPS` solo por historia de migraciones |
+| `apps/unidades/migrations/0003_delete_unidad.py` | Nueva: `DeleteModel Unidad` (depende de las remociones de FKs) |
+| `apps/personas/models.py` | Quitado FK `unidad`; `codigo` con `unique=True` |
+| `apps/documentos/models.py` | Quitado FK `unidad` de `TipoDocumento`; `slug` con `unique=True` |
+| `apps/personas/migrations/0006_...` | `RemoveField unidad` + `AlterField codigo unique` (+ DROP del índice LIKE huérfano de la 0004) |
+| `apps/documentos/migrations/0013_...` | `RemoveField unidad` + `AlterField slug unique` (+ DROP del índice LIKE huérfano de la 0008) |
+| `apps/personas/schema.py`, `apps/documentos/schema.py` | Quitado arg `unidadId` de `personas`, `tiposDocumento`, `documentosPendientes`, `documentosDudosos`, `documentosSinClasificar`, `documentosDuplicados` |
+| `apps/personas/mutations.py`, `apps/documentos/mutations.py` | Quitado `unidad_id` de creates; quitadas validaciones "otra unidad"; `reclasificar_todos()` sin filtro |
+| `config/schema.py` | Sin `UnidadQuery`/`UnidadMutation` |
+| `apps/storage/ingesta.py`, `pdf_processor.py`, `deduplicacion.py`, `documentos/views.py` | Sin parámetro `unidad`; `resolver_persona(codigo)`, `buscar_duplicado(phash)` global; `UploadBatchPDFView` ya no pide `unidad_id` |
+| `apps/tests/` | `datos.py` sin unidades (desactiva seeds de tipos); `test_aislamiento.py` reescrito a resolución por código; resto sin `unidadId`/`otra_unidad`; `test_contrato.py` sin ops de unidad |
+| `docs/schema.graphql` | Regenerado sin unidad |
+
+**Frontend:**
+| Archivo | Cambio |
+|---|---|
+| `shared/contexts/UnidadContext.tsx`, `graphql/queries/unidades.ts`, `graphql/mutations/unidades.ts`, `modules/configuracion/pages/Unidades.tsx` | **Borrados** |
+| `main.tsx` | Sin `UnidadProvider` |
+| `shared/components/layout/Layout.tsx` | Sin selector de unidad ni nav "Unidades" (título "Sistema de Digitalización") |
+| `config/routes.tsx`, `config/constants.ts` | Sin ruta `/configuracion/unidades` |
+| `shared/types/index.ts` | Sin `Unidad`; `Persona`/`TipoDocumento` sin `unidad` |
+| Todas las páginas + `useColaRevision` | Sin `useUnidad`, sin `unidadId`, sin `skip:!unidadActiva`; `SubirDocumentos` sin `unidad_id` en FormData |
+| Queries/mutations graphql | Sin `$unidadId` |
+
+### Deuda conocida
+- La app `apps/unidades` vacía debe quedarse en `INSTALLED_APPS` hasta squashear migraciones (las viejas la referencian).
+- Los seeds históricos siembran 4 personas y 17 tipos: los tests los descuentan con `search` y membresía en vez de conteos absolutos.
+- `tareas.md` F1-F6, F15.C y Refino F1 marcadas obsoletas por esta fase.
+
+Completado el 2026-10-09 — single-tenant global, tabla `unidades` borrada, suite 145 tests en verde + `npm run build` OK.
+
+---
+
+## Reglas globales para la IA ejecutora
+
+1. **Una fase a la vez.** No mezcles cambios de dos fases en un mismo commit/PR.
+2. **No toques `core/`** raíz bajo ninguna circunstancia.
+3. **No introduzcas dependencias** fuera de las indicadas en cada fase.
+4. **Respeta el stack existente.** No migres a DRF, no cambies GraphQL por REST, no agregues ORM alternativo.
+5. **Cada fase debe dejar el sistema funcional.** Si una fase no puede completarse sin otra, márcala como `BLOQUEADA` con una nota explicando el bloqueo, en lugar de dejarla `INCOMPLETO`.
+6. **Al terminar una fase**, actualiza su estado a `COMPLETADO` en este documento y agrega debajo una línea: `Completado el <fecha> — <resumen de 1 línea>`.
+7. **Si detectas un bug fuera del alcance** de la fase actual, no lo arregles. Agrégalo como nota bajo la fase correspondiente o créale una fase nueva al final del documento si es crítico.
