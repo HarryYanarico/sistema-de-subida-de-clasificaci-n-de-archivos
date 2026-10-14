@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,9 +22,6 @@ INSTALLED_APPS = [
     'strawberry_django',
     'apps.graphql',
     'apps.users',
-    # Historica: solo aporta la migracion final que borra la tabla
-    # `unidades`. Sin modelos ni API. No quitar hasta squashear migraciones.
-    'apps.unidades',
     'apps.personas',
     'apps.documentos',
 ]
@@ -35,6 +33,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'apps.users.middleware.BearerAuthMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

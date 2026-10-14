@@ -1,0 +1,5 @@
+export * from './auth'
+export * from './configuracion'
+export * from './documentos'
+export * from './revision'
+export * from './personas'

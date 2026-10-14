@@ -5,6 +5,7 @@ import strawberry_django
 from django.contrib.auth import authenticate
 
 from .models import User
+from .tokens import generar_token
 
 
 @strawberry_django.type(User, fields=['id', 'username', 'email', 'first_name', 'last_name', 'role', 'telefono'])
@@ -40,7 +41,7 @@ class Mutation:
         if user is not None:
             return LoginUser(
                 user=user,
-                token=f"token-{user.id}",
+                token=generar_token(user),
                 success=True,
                 message="Inicio de sesión exitoso"
             )

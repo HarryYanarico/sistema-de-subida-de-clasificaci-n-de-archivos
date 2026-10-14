@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
+import { STORAGE_KEYS } from '@config/constants'
 import { User } from '../types'
 
 interface AuthContextType {
@@ -15,8 +16,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const TOKEN_KEY = 'token'
-const USER_KEY = 'user'
+const TOKEN_KEY = STORAGE_KEYS.TOKEN
+const USER_KEY = STORAGE_KEYS.USER
 
 function leerSesion(): { token: string | null; user: User | null } {
   try {

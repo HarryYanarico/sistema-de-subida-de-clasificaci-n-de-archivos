@@ -1,0 +1,5 @@
+export * from './client'
+export * from './queries'
+export * from './mutations'
+export * from './fragments/documento.fragments'
+export * from './fragments/persona.fragments'

@@ -37,6 +37,25 @@ class ResolverPersonaTests(TestCase):
         self.assertIsNone(persona)
         self.assertIn('inválido', error)
 
+    def test_nombre_con_anio_extra_resuelve_persona_correctamente(self):
+        persona, codigo, error = resolver_persona(f'{CODIGO} JUAN PEREZ 2024.pdf')
+        self.assertIsNone(error)
+        self.assertEqual(codigo, CODIGO)
+        self.assertEqual(persona.id, self.persona.id)
+
+    def test_nombre_con_tomo_y_espacios_resuelve_persona(self):
+        persona, codigo, error = resolver_persona(f'{CODIGO}_PEREZ_TOMO_1.pdf')
+        self.assertIsNone(error)
+        self.assertEqual(codigo, CODIGO)
+        self.assertEqual(persona.id, self.persona.id)
+
+    def test_anio_al_inicio_encuentra_persona_por_smart_matching(self):
+        persona, codigo, error = resolver_persona(f'2024 - {CODIGO} JUAN PEREZ.pdf')
+        self.assertIsNone(error)
+        self.assertEqual(codigo, CODIGO)
+        self.assertEqual(persona.id, self.persona.id)
+
+
 
 class ResolverPersonaInternaTests(TestCase):
     def setUp(self):
