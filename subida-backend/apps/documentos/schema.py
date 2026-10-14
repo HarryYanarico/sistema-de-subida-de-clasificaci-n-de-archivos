@@ -5,18 +5,28 @@ import strawberry_django
 
 from apps.personas.schema import PersonaType
 
-from .models import TipoDocumento, Documento
+from .models import TipoDocumento, Documento, SugerenciaKeyword
 
 
 @strawberry_django.type(
     TipoDocumento,
     fields=[
-        'id', 'nombre', 'slug', 'palabras_clave', 'keywords_obligatorias',
+        'id', 'nombre', 'slug', 'palabras_clave',
         'activo', 'created_at',
     ],
 )
 class TipoDocumentoType:
-    pass
+    @strawberry_django.field
+    def keywords_obligatorias(self) -> list[str]:
+        return list(self.keywords_obligatorias or [])
+
+
+@strawberry_django.type(
+    SugerenciaKeyword,
+    fields=['id', 'palabra', 'ratio', 'frecuencia', 'aceptada', 'created_at'],
+)
+class SugerenciaKeywordType:
+    tipo_documento: TipoDocumentoType
 
 
 @strawberry_django.type(
@@ -59,6 +69,19 @@ class DocumentoByPersona:
     total_paginas: int
     clasificados: int
     pendientes: int
+
+
+@strawberry.type
+class EstadisticasDigitalizacionType:
+    total_documentos: int
+    total_clasificados: int
+    total_verificados: int
+    total_dudosos: int
+    total_sin_clasificar: int
+    total_duplicados: int
+    total_pendientes: int
+    tasa_efectividad: float
+    sugerencias_pendientes: int
 
 
 def _paginar(qs, limit: Optional[int], offset: Optional[int] = None):
@@ -104,14 +127,68 @@ class Query:
         )
 
     @strawberry.field
-    def documentos_pendientes(self) -> list[DocumentoType]:
+    def documentos_pendientes(
+        self,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> list[DocumentoType]:
         # 'sin_clasificar' entra junto a 'pendiente': las paginas que el
         # clasificador no pudo resolver se listan aca, no se esconden. Los
         # 'dudosa' tienen tipo asignado y van aparte (Fase 5).
-        return Documento.objects.filter(
+        qs = Documento.objects.filter(
             estado__in=['pendiente', 'sin_clasificar'],
             tipo_documento__isnull=True,
+        ).order_by('id')
+        return _paginar(qs, limit, offset)
+
+    @strawberry.field
+    def estadisticas_digitalizacion(self) -> EstadisticasDigitalizacionType:
+        """Métricas globales para el Dashboard de digitalización."""
+        from django.db.models import Count, Q
+
+        agregados = Documento.objects.aggregate(
+            total=Count('id'),
+            clasificados=Count('id', filter=Q(estado='clasificado')),
+            verificados=Count('id', filter=Q(estado='verificado')),
+            dudosos=Count('id', filter=Q(estado='dudosa')),
+            sin_clasificar=Count('id', filter=Q(estado='sin_clasificar')),
+            duplicados=Count('id', filter=Q(estado='duplicado')),
+            pendientes=Count('id', filter=Q(estado='pendiente')),
         )
+        total = agregados['total'] or 0
+        clasificados = agregados['clasificados'] or 0
+        verificados = agregados['verificados'] or 0
+        dudosos = agregados['dudosos'] or 0
+        sin_clasificar = agregados['sin_clasificar'] or 0
+        duplicados = agregados['duplicados'] or 0
+        pendientes = agregados['pendientes'] or 0
+
+        efectivos = clasificados + verificados
+        tasa = round((efectivos / total) * 100.0, 1) if total > 0 else 0.0
+        sug_pendientes = SugerenciaKeyword.objects.filter(aceptada__isnull=True).count()
+
+        return EstadisticasDigitalizacionType(
+            total_documentos=total,
+            total_clasificados=clasificados,
+            total_verificados=verificados,
+            total_dudosos=dudosos,
+            total_sin_clasificar=sin_clasificar,
+            total_duplicados=duplicados,
+            total_pendientes=pendientes,
+            tasa_efectividad=tasa,
+            sugerencias_pendientes=sug_pendientes,
+        )
+
+    @strawberry.field
+    def documentos_recientes(
+        self,
+        limit: Optional[int] = 5,
+    ) -> list[DocumentoType]:
+        """Últimos folios procesados en el sistema."""
+        qs = Documento.objects.select_related('persona', 'tipo_documento').order_by('-created_at', '-id')
+        if limit is not None:
+            qs = qs[:limit]
+        return list(qs)
 
     # ------------------------------------------------------------------
     # Colas de revision (Fase 5) — sistema single-tenant, sin filtro por
@@ -160,3 +237,14 @@ class Query:
             estado='duplicado',
         ).order_by('id')
         return _paginar(qs, limit, offset)
+
+    @strawberry.field
+    def sugerencias_keyword(
+        self,
+        tipo_documento_id: int,
+    ) -> list[SugerenciaKeywordType]:
+        """Sugerencias estadísticas de palabras clave para un tipo de documento."""
+        return SugerenciaKeyword.objects.filter(
+            tipo_documento_id=tipo_documento_id,
+            aceptada__isnull=True,
+        ).order_by('-ratio', '-frecuencia')

@@ -82,6 +82,19 @@ class QueryPersonasTests(GraphQLTestCase):
         self.assertEqual(p['codigo'], '310000001')
         self.assertIsNone(self.consulta('persona', 'id', id=999999))
 
+    def test_ordenamiento_por_created_at_y_whitelist(self):
+        d_asc = self.consulta(
+            'personas', 'items { codigo }',
+            search='310000', orderBy='created_at',
+        )
+        codigos_asc = [i['codigo'] for i in d_asc['items']]
+        d_desc = self.consulta(
+            'personas', 'items { codigo }',
+            search='310000', orderBy='-created_at',
+        )
+        codigos_desc = [i['codigo'] for i in d_desc['items']]
+        self.assertEqual(codigos_asc, list(reversed(codigos_desc)))
+
 
 class QueryDocumentosTests(GraphQLTestCase):
     def setUp(self):
@@ -215,3 +228,49 @@ class QueryClasificacionTests(GraphQLTestCase):
 
         d = self.consulta('documentosPendientes', 'id')
         self.assertNotIn(str(self.d['clasificado'].id), [x['id'] for x in d])
+
+    def test_sugerencias_keyword_retorna_pendientes(self):
+        from apps.documentos.models import SugerenciaKeyword
+        SugerenciaKeyword.objects.create(
+            tipo_documento=self.d['tipo'],
+            palabra='reniec',
+            ratio=3.5,
+            frecuencia=5,
+            aceptada=None,
+        )
+        SugerenciaKeyword.objects.create(
+            tipo_documento=self.d['tipo'],
+            palabra='antigua',
+            ratio=2.0,
+            frecuencia=2,
+            aceptada=True,
+        )
+        d = self.consulta(
+            'sugerenciasKeyword', 'id palabra ratio frecuencia',
+            tipoDocumentoId=self.d['tipo'].id,
+        )
+        palabras = [x['palabra'] for x in d]
+        self.assertIn('reniec', palabras)
+        self.assertNotIn('antigua', palabras)
+
+    def test_documentos_pendientes_paginacion(self):
+        # Con limit y offset
+        d = self.consulta('documentosPendientes', 'id', limit=1, offset=0)
+        self.assertEqual(len(d), 1)
+
+    def test_estadisticas_digitalizacion(self):
+        d = self.consulta(
+            'estadisticasDigitalizacion',
+            'totalDocumentos', 'totalClasificados', 'totalVerificados',
+            'totalDudosos', 'totalSinClasificar', 'totalDuplicados',
+            'totalPendientes', 'tasaEfectividad', 'sugerenciasPendientes',
+        )
+        self.assertGreaterEqual(d['totalDocumentos'], 2)
+        self.assertGreaterEqual(d['totalClasificados'], 1)
+        self.assertGreaterEqual(d['totalPendientes'], 1)
+        self.assertIsInstance(d['tasaEfectividad'], float)
+
+    def test_documentos_recientes(self):
+        d = self.consulta('documentosRecientes', 'id paginaNumero estado', limit=2)
+        self.assertLessEqual(len(d), 2)
+        self.assertGreaterEqual(len(d), 1)

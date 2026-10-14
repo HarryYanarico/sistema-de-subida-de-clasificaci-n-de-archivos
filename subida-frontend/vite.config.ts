@@ -7,6 +7,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src/shared'),
+      '@shared': path.resolve(__dirname, './src/shared'),
+      '@config': path.resolve(__dirname, './src/config'),
+      '@modules': path.resolve(__dirname, './src/modules'),
+      '@graphql': path.resolve(__dirname, './src/graphql'),
+      '@app-types': path.resolve(__dirname, './src/types'),
     },
   },
   server: {

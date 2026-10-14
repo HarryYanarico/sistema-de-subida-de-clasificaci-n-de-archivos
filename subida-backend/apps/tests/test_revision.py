@@ -3,6 +3,7 @@
 from apps.documentos.models import Documento, TipoDocumento
 from apps.tests.base import GraphQLTestCase
 from apps.tests.datos import DatosGraphQL
+from apps.users.models import User
 
 
 class ColaRevisionTests(GraphQLTestCase):
@@ -211,6 +212,17 @@ class ReclasificarDocumentoTests(GraphQLTestCase):
         self.assertEqual(len(historial), 2)
         self.assertEqual(historial[1]['tipo_anterior'], 'Constancia de Estudios')
         self.assertEqual(historial[1]['tipo_nuevo'], 'Titulo')
+
+    def test_el_historial_registra_usuario_autenticado(self):
+        user = User.objects.create_user(username='operador_audit', password='password123')
+        from unittest.mock import Mock
+        request = Mock()
+        request.user = user
+        self._mutar(context_value={'request': request})
+        self.doc.refresh_from_db()
+        historial = self.doc.historial_clasificacion
+        self.assertEqual(len(historial), 1)
+        self.assertEqual(historial[0]['usuario'], 'operador_audit')
 
     def test_saca_el_duplicado_al_verificar(self):
         """Si el revisor confirma un duplicado, deja de serlo: su veredicto manda."""

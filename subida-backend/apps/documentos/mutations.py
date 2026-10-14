@@ -1,10 +1,11 @@
 import re
 from typing import Optional
 
+# pyrefly: ignore [missing-import]
 import strawberry
 
-from .models import TipoDocumento, Documento
-from .schema import TipoDocumentoType, DocumentoType
+from .models import TipoDocumento, Documento, SugerenciaKeyword
+from .schema import TipoDocumentoType, DocumentoType, SugerenciaKeywordType
 
 
 def clasificar_documento(doc):
@@ -60,22 +61,40 @@ def registrar_reclasificacion(doc, tipo_anterior, tipo_nuevo, usuario=None):
 
 
 def _usuario_de(info):
-    """Usuario de la peticion, o None si GraphQL no lo proveyo.
-
-    El login actual emite un token que el backend no valida
-    (`token=f"token-{user.id}"` en apps/users/schema.py), asi que hoy esto casi
-    siempre devuelve None y el historial queda sin autor. El campo queda
-    listo: en cuanto haya sesion real, el nombre aparece sin tocar el log.
-    """
-    request = getattr(info, 'context', None)
-    if request is None:
+    """Usuario autenticado de la petición, o None si no hay usuario autenticado."""
+    if info is None:
         return None
 
-    user = getattr(request, 'user', None)
-    if user is None or not getattr(user, 'is_authenticated', False):
+    context = getattr(info, 'context', None)
+    if context is None:
         return None
 
-    return user
+    # context puede ser un objeto (StrawberryDjangoContext/HttpRequest) o un dict
+    if isinstance(context, dict):
+        request = context.get('request', context)
+        user = context.get('user')
+    else:
+        request = getattr(context, 'request', context)
+        user = getattr(context, 'user', None)
+
+    if user is None:
+        if isinstance(request, dict):
+            user = request.get('user')
+        else:
+            user = getattr(request, 'user', None)
+
+    if user is not None and getattr(user, 'is_authenticated', False):
+        return user
+
+    # Fallback directo al header Authorization: Bearer <token>
+    if not isinstance(request, dict):
+        meta = getattr(request, 'META', {})
+        auth_header = meta.get('HTTP_AUTHORIZATION') or getattr(getattr(request, 'headers', {}), 'get', lambda k, default='': '')('Authorization', '')
+        if auth_header and auth_header.startswith('Bearer '):
+            from apps.users.tokens import validar_token
+            return validar_token(auth_header.split(' ', 1)[1].strip())
+
+    return None
 
 
 def _limpiar_obligatorias(valores):
@@ -136,6 +155,30 @@ class ReclasificarDocumento:
     documento: Optional[DocumentoType]
     success: bool
     message: str
+
+
+@strawberry.type
+class AceptarSugerencia:
+    sugerencia: Optional[SugerenciaKeywordType]
+    tipo_documento: Optional[TipoDocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class DescartarSugerencia:
+    sugerencia: Optional[SugerenciaKeywordType]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class GenerarSugerenciasKeywords:
+    success: bool
+    message: str
+    total_generadas: int
+    total_verificados: int
+
 
 
 @strawberry.type
@@ -240,7 +283,7 @@ class Mutation:
 
     @strawberry.mutation
     def reclasificar_documento(
-        self, documento_id: int, tipo_documento_id: int, info=None
+        self, info: strawberry.Info, documento_id: int, tipo_documento_id: int
     ) -> ReclasificarDocumento:
         """Correccion humana de una pagina mal clasificada.
 
@@ -314,3 +357,67 @@ class Mutation:
             )
         except Exception as e:
             return CrearYAsignarTipo(tipo_documento=None, documento=None, success=False, message=str(e))
+
+    @strawberry.mutation
+    def aceptar_sugerencia(self, id: int, peso: int = 1) -> AceptarSugerencia:
+        try:
+            sug = SugerenciaKeyword.objects.filter(id=id).first()
+            if not sug:
+                return AceptarSugerencia(
+                    sugerencia=None, tipo_documento=None, success=False, message="Sugerencia no encontrada"
+                )
+
+            peso_acotado = max(1, min(5, int(peso)))
+            tipo = sug.tipo_documento
+
+            from apps.storage.clasificador import parsear_palabras_clave
+            actuales = parsear_palabras_clave(tipo.palabras_clave)
+            palabras_dict = {p: w for p, w in actuales}
+            palabras_dict[sug.palabra] = peso_acotado
+            tipo.palabras_clave = ', '.join(f"{p}:{w}" for p, w in palabras_dict.items())
+            tipo.save()
+
+            sug.aceptada = True
+            sug.save()
+
+            return AceptarSugerencia(
+                sugerencia=sug,
+                tipo_documento=tipo,
+                success=True,
+                message=f"Palabra '{sug.palabra}' agregada con peso {peso_acotado}",
+            )
+        except Exception as e:
+            return AceptarSugerencia(sugerencia=None, tipo_documento=None, success=False, message=str(e))
+
+    @strawberry.mutation
+    def descartar_sugerencia(self, id: int) -> DescartarSugerencia:
+        try:
+            sug = SugerenciaKeyword.objects.filter(id=id).first()
+            if not sug:
+                return DescartarSugerencia(sugerencia=None, success=False, message="Sugerencia no encontrada")
+            sug.aceptada = False
+            sug.save()
+            return DescartarSugerencia(sugerencia=sug, success=True, message="Sugerencia descartada")
+        except Exception as e:
+            return DescartarSugerencia(sugerencia=None, success=False, message=str(e))
+
+    @strawberry.mutation
+    def generar_sugerencias_keywords(
+        self, min_docs: int = 5, top: int = 5, limpiar: bool = False
+    ) -> GenerarSugerenciasKeywords:
+        try:
+            from .services import generar_sugerencias_keywords
+            res = generar_sugerencias_keywords(min_docs=min_docs, top=top, limpiar=limpiar)
+            return GenerarSugerenciasKeywords(
+                success=res['success'],
+                message=res['message'],
+                total_generadas=res['total_generadas'],
+                total_verificados=res['total_verificados'],
+            )
+        except Exception as e:
+            return GenerarSugerenciasKeywords(
+                success=False,
+                message=f"Error al generar sugerencias: {str(e)}",
+                total_generadas=0,
+                total_verificados=0,
+            )

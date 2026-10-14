@@ -1,0 +1,5 @@
+export * from './documento.queries'
+export * from './revision.queries'
+export * from './tipo-documento.queries'
+export * from './persona.queries'
+export * from './dashboard.queries'

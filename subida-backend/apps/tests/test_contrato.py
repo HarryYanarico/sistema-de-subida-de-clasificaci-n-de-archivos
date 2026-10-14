@@ -14,12 +14,14 @@ from config.schema import schema
 # Sistema single-tenant: sin Unidad ni argumentos unidadId.
 ESPERADO = {
     'Query': {
-        'personas': [('search', 'String'), ('page', 'Int'), ('limit', 'Int')],
+        'personas': [('limit', 'Int'), ('orderBy', 'String'), ('page', 'Int'), ('search', 'String')],
         'persona': [('id', 'Int!')],
         'tiposDocumento': [('activo', 'Boolean')],
         'tipoDocumento': [('id', 'Int!')],
         'documentosPersona': [('personaId', 'Int!')],
-        'documentosPendientes': [],
+        'documentosPendientes': [
+            ('limit', 'Int'), ('offset', 'Int!'),
+        ],
         # Las tres colas de revision comparten forma: paginacion opcional.
         'documentosDudosos': [
             ('limit', 'Int'), ('offset', 'Int!'),
@@ -30,6 +32,9 @@ ESPERADO = {
         'documentosDuplicados': [
             ('limit', 'Int'), ('offset', 'Int!'),
         ],
+        'sugerenciasKeyword': [('tipoDocumentoId', 'Int!')],
+        'estadisticasDigitalizacion': [],
+        'documentosRecientes': [('limit', 'Int')],
     },
     'Mutation': {
         'loginUser': [('password', 'String!'), ('username', 'String!')],
@@ -64,6 +69,9 @@ ESPERADO = {
         'crearYAsignarTipo': [
             ('documentoId', 'Int!'), ('nombre', 'String!'), ('palabrasClave', 'String!'),
         ],
+        'aceptarSugerencia': [('id', 'Int!'), ('peso', 'Int!')],
+        'descartarSugerencia': [('id', 'Int!')],
+        'generarSugerenciasKeywords': [('limpiar', 'Boolean!'), ('minDocs', 'Int!'), ('top', 'Int!')],
     },
 }
 
@@ -127,6 +135,17 @@ class ContratoSchemaTests(SimpleTestCase):
             'ClasificarDocumento': ['documento', 'message', 'success'],
             'ReclasificarDocumento': ['documento', 'message', 'success'],
             'CrearYAsignarTipo': ['documento', 'message', 'success', 'tipoDocumento'],
+            'SugerenciaKeywordType': [
+                'aceptada', 'createdAt', 'frecuencia', 'id', 'palabra', 'ratio', 'tipoDocumento',
+            ],
+            'AceptarSugerencia': ['message', 'success', 'sugerencia', 'tipoDocumento'],
+            'DescartarSugerencia': ['message', 'success', 'sugerencia'],
+            'GenerarSugerenciasKeywords': ['message', 'success', 'totalGeneradas', 'totalVerificados'],
+            'EstadisticasDigitalizacionType': [
+                'sugerenciasPendientes', 'tasaEfectividad', 'totalClasificados', 'totalDocumentos',
+                'totalDudosos', 'totalDuplicados', 'totalPendientes', 'totalSinClasificar',
+                'totalVerificados',
+            ],
         }
         for nombre, campos in esperados.items():
             with self.subTest(tipo=nombre):

@@ -6,10 +6,29 @@ services:
       - "9001:9001"
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     volumes:
       - minio_data:/data
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Esperando que MinIO este listo...';
+      until (/usr/bin/mc alias set myminio http://minio:9000 $${MINIO_ACCESS_KEY:-minioadmin} $${MINIO_SECRET_KEY:-minioadmin}); do
+        sleep 2;
+      done;
+      echo 'Creando bucket $${MINIO_BUCKET:-digitalizacion}...';
+      /usr/bin/mc mb myminio/$${MINIO_BUCKET:-digitalizacion} --ignore-existing;
+      echo 'Bucket $${MINIO_BUCKET:-digitalizacion} listo y configurado.';
+      exit 0;
+      "
+    env_file:
+      - .env
 
   backend:
     build:
@@ -26,6 +45,8 @@ services:
     depends_on:
       minio:
         condition: service_started
+      createbuckets:
+        condition: service_completed_successfully
 
   frontend:
     build:

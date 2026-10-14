@@ -17,7 +17,12 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/shared/*"]
+      "@/*": ["./src/shared/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@config/*": ["./src/config/*"],
+      "@modules/*": ["./src/modules/*"],
+      "@graphql/*": ["./src/graphql/*"],
+      "@app-types/*": ["./src/types/*"]
     }
   },
   "include": ["src"]

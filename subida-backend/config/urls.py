@@ -9,13 +9,27 @@ from apps.documentos.views import (
     DocumentoFileView, DocumentoOriginalView, DocumentoThumbnailView,
 )
 
+from apps.users.tokens import validar_token
+
+
+class AuthenticatedGraphQLView(GraphQLView):
+    def get_context(self, request, response):
+        auth_header = request.META.get('HTTP_AUTHORIZATION') or getattr(request, 'headers', {}).get('Authorization', '')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ', 1)[1].strip()
+            user = validar_token(token)
+            if user:
+                request.user = user
+        return super().get_context(request, response)
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     # allow_queries_via_get=False mantiene el comportamiento de graphene-django:
     # el GET solo sirve el IDE, las operaciones se ejecutan por POST.
     path(
         'graphql/',
-        csrf_exempt(GraphQLView.as_view(
+        csrf_exempt(AuthenticatedGraphQLView.as_view(
             schema=schema,
             graphql_ide='graphiql',
             allow_queries_via_get=False,

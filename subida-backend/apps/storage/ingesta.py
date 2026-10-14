@@ -9,24 +9,73 @@ from apps.storage.pdf_processor import PDFProcessor
 TAMANO_MAXIMO_PDF = 50 * 1024 * 1024
 
 ERROR_NOMBRE_INVALIDO = (
-    'Nombre de archivo inválido. No se pudieron extraer 5 o más dígitos '
-    '(ej: 12345678.pdf o Acta_12345678.pdf)'
+    'Nombre de archivo inválido. No se pudieron extraer 4 o más dígitos '
+    '(ej: 12345678.pdf, 216179920_JUAN_PEREZ.pdf o Documento_12345678.pdf)'
 )
 
 
+def extract_candidate_codes(filename: str) -> list:
+    """
+    Extrae bloques de 4 o más dígitos del nombre de archivo.
+    Prioriza el primer bloque numérico (al inicio o tras prefijos comunes como 'Doc_', 'Exp_'),
+    ignorando sufijos posteriores (años como 2024, tomos, etc.).
+    """
+    name = filename.rsplit('.', 1)[0].strip()
+
+    candidatos = []
+
+    # 1. Prioridad: bloque numérico de 4+ dígitos al inicio o con prefijo
+    match_inicio = re.match(r'^(?:[A-Za-z]+[\s_\-\.]+)?(\d{4,})', name)
+    if match_inicio:
+        candidatos.append(match_inicio.group(1))
+
+    # 2. Otros bloques numéricos de 4+ dígitos en el nombre (delimitados)
+    for bloque in re.findall(r'\b\d{4,}\b', name):
+        if bloque not in candidatos:
+            candidatos.append(bloque)
+
+    # 3. Fallback en caso de nombres sin delimitadores de palabra
+    if not candidatos:
+        for bloque in re.findall(r'\d{4,}', name):
+            if bloque not in candidatos:
+                candidatos.append(bloque)
+
+    return candidatos
+
+
 def extract_digits_from_filename(filename: str) -> str:
-    name = filename.rsplit('.', 1)[0]
-    return re.sub(r'[^0-9]', '', name)
+    """
+    Retorna el código de registro candidato principal para compatibilidad.
+    """
+    candidatos = extract_candidate_codes(filename)
+    return candidatos[0] if candidatos else ''
 
 
 def resolver_persona(nombre: str) -> tuple:
-    codigo = extract_digits_from_filename(nombre)
-    if not re.match(r'^\d{5,}$', codigo):
+    """
+    Resuelve la persona correspondiente al archivo.
+    Principio: 'El regex propone, la tabla dispone'.
+    Si hay múltiples números (ej: código y año 2024), valida contra la tabla Persona.
+    """
+    candidatos = extract_candidate_codes(nombre)
+    if not candidatos:
         return None, None, ERROR_NOMBRE_INVALIDO
-    persona = Persona.objects.filter(codigo=codigo).first()
+
+    persona = None
+    codigo_seleccionado = candidatos[0]
+
+    # Buscar cuál de los candidatos existe realmente en la base de datos
+    for cand in candidatos:
+        p = Persona.objects.filter(codigo=cand).first()
+        if p:
+            persona = p
+            codigo_seleccionado = cand
+            break
+
     if not persona:
-        return None, codigo, f'No se encontró persona con código {codigo}'
-    return persona, codigo, None
+        return None, codigo_seleccionado, f'No se encontró persona con código {codigo_seleccionado}'
+
+    return persona, codigo_seleccionado, None
 
 
 def procesar_ingesta(nombre, contenido, usuario, processor=None):

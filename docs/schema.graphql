@@ -1,3 +1,10 @@
+type AceptarSugerencia {
+  sugerencia: SugerenciaKeywordType
+  tipoDocumento: TipoDocumentoType
+  success: Boolean!
+  message: String!
+}
+
 type AsignarDocumento {
   documento: DocumentoType
   success: Boolean!
@@ -48,6 +55,12 @@ type DeleteTipoDocumento {
   message: String!
 }
 
+type DescartarSugerencia {
+  sugerencia: SugerenciaKeywordType
+  success: Boolean!
+  message: String!
+}
+
 type DocumentoByPersona {
   personaId: Int!
   documentos: [DocumentoType!]!
@@ -73,6 +86,25 @@ type DocumentoType {
   duplicadoDe: ID
 }
 
+type EstadisticasDigitalizacionType {
+  totalDocumentos: Int!
+  totalClasificados: Int!
+  totalVerificados: Int!
+  totalDudosos: Int!
+  totalSinClasificar: Int!
+  totalDuplicados: Int!
+  totalPendientes: Int!
+  tasaEfectividad: Float!
+  sugerenciasPendientes: Int!
+}
+
+type GenerarSugerenciasKeywords {
+  success: Boolean!
+  message: String!
+  totalGeneradas: Int!
+  totalVerificados: Int!
+}
+
 """
 The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
 """
@@ -96,6 +128,9 @@ type Mutation {
   clasificarDocumento(documentoId: Int!): ClasificarDocumento!
   reclasificarDocumento(documentoId: Int!, tipoDocumentoId: Int!): ReclasificarDocumento!
   crearYAsignarTipo(documentoId: Int!, nombre: String!, palabrasClave: String!): CrearYAsignarTipo!
+  aceptarSugerencia(id: Int!, peso: Int! = 1): AceptarSugerencia!
+  descartarSugerencia(id: Int!): DescartarSugerencia!
+  generarSugerenciasKeywords(minDocs: Int! = 5, top: Int! = 5, limpiar: Boolean! = false): GenerarSugerenciasKeywords!
   loginUser(username: String!, password: String!): LoginUser!
   createUser(username: String!, password: String!, email: String!, firstName: String!, lastName: String!, role: String = null, telefono: String = null): CreateUser!
 }
@@ -124,15 +159,18 @@ type PersonaType {
 }
 
 type Query {
-  personas(search: String = null, page: Int = 1, limit: Int = 10): PersonaConnection!
+  personas(search: String = null, page: Int = 1, limit: Int = 10, orderBy: String = null): PersonaConnection!
   persona(id: Int!): PersonaType
   tiposDocumento(activo: Boolean = null): [TipoDocumentoType!]!
   tipoDocumento(id: Int!): TipoDocumentoType
   documentosPersona(personaId: Int!): DocumentoByPersona!
-  documentosPendientes: [DocumentoType!]!
+  documentosPendientes(limit: Int = null, offset: Int! = 0): [DocumentoType!]!
+  estadisticasDigitalizacion: EstadisticasDigitalizacionType!
+  documentosRecientes(limit: Int = 5): [DocumentoType!]!
   documentosDudosos(limit: Int = null, offset: Int! = 0): [DocumentoType!]!
   documentosSinClasificar(limit: Int = null, offset: Int! = 0): [DocumentoType!]!
   documentosDuplicados(limit: Int = null, offset: Int! = 0): [DocumentoType!]!
+  sugerenciasKeyword(tipoDocumentoId: Int!): [SugerenciaKeywordType!]!
 }
 
 type ReclasificarDocumento {
@@ -141,14 +179,24 @@ type ReclasificarDocumento {
   message: String!
 }
 
+type SugerenciaKeywordType {
+  tipoDocumento: TipoDocumentoType!
+  id: ID!
+  palabra: String!
+  ratio: Float!
+  frecuencia: Int!
+  aceptada: Boolean
+  createdAt: DateTime!
+}
+
 type TipoDocumentoType {
   id: ID!
   nombre: String!
   slug: String!
   palabrasClave: String!
-  keywordsObligatorias: JSON!
   activo: Boolean!
   createdAt: DateTime!
+  keywordsObligatorias: [String!]!
 }
 
 type UpdatePersona {

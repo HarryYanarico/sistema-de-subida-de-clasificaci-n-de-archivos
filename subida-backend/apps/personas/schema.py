@@ -43,6 +43,13 @@ class PersonaConnection:
     total_pages: int
 
 
+ORDER_BY_WHITELIST = {
+    'created_at', '-created_at',
+    'codigo', '-codigo',
+    'nombres', '-nombres',
+}
+
+
 @strawberry.type
 class Query:
     @strawberry.field
@@ -51,6 +58,7 @@ class Query:
         search: Optional[str] = None,
         page: Optional[int] = 1,
         limit: Optional[int] = 10,
+        order_by: Optional[str] = None,
     ) -> PersonaConnection:
         page = page or 1
         limit = limit or 10
@@ -62,6 +70,8 @@ class Query:
                 | Q(codigo__icontains=search)
                 | Q(ci__icontains=search)
             )
+        if order_by and order_by in ORDER_BY_WHITELIST:
+            queryset = queryset.order_by(order_by)
         total = queryset.count()
         total_pages = max(1, (total + limit - 1) // limit)
         offset = (page - 1) * limit

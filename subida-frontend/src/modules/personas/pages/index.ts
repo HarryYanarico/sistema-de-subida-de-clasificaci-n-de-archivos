@@ -1,0 +1,5 @@
+export * from './ListaPersonasPage'
+export * from './RegistrarPersonaPage'
+export * from './CasilleroDocumentosPage'
+export * from './VistaPersonaListaPage'
+export * from './VistaPersonaDocumentosPage'

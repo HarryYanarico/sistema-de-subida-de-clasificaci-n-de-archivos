@@ -37,8 +37,8 @@ def _invocacion(raiz, variables):
 
 class GraphQLTestCase(TestCase):
 
-    def ejecutar(self, operacion, variables=None):
-        resultado = schema.execute_sync(operacion, variable_values=variables or {})
+    def ejecutar(self, operacion, variables=None, context_value=None):
+        resultado = schema.execute_sync(operacion, variable_values=variables or {}, context_value=context_value)
         self.assertIsNone(
             resultado.errors,
             msg='Errores de GraphQL: {0}'.format(resultado.errors),
@@ -47,20 +47,24 @@ class GraphQLTestCase(TestCase):
 
     def consulta(self, raiz, *campos, **variables):
         """`consulta('personas', 'total', search='x')` -> data['personas']."""
+        context_value = variables.pop('context_value', None)
         declaracion = _declarar(variables)
         firma = '({0})'.format(declaracion) if declaracion else ''
         cuerpo = ' '.join(campos) if campos else '__typename'
         return self.ejecutar(
             'query{0} {{ {1} {{ {2} }} }}'.format(firma, _invocacion(raiz, variables), cuerpo),
             variables,
+            context_value=context_value,
         )[raiz]
 
     def mutacion(self, raiz, *campos, **variables):
         """`mutacion('createPersona', 'success', codigo='1', ...)`."""
+        context_value = variables.pop('context_value', None)
         declaracion = _declarar(variables)
         firma = '({0})'.format(declaracion) if declaracion else ''
         cuerpo = ' '.join(campos) if campos else '__typename'
         return self.ejecutar(
             'mutation{0} {{ {1} {{ {2} }} }}'.format(firma, _invocacion(raiz, variables), cuerpo),
             variables,
+            context_value=context_value,
         )[raiz]

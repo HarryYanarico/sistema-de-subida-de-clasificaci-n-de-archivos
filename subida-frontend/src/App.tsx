@@ -1,17 +1,16 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { routes } from './config/routes';
-import { Layout } from './shared/components/layout/Layout';
-import { ProtectedRoute } from './shared/components/route/ProtectedRoute';
-import { useAuth } from './shared/contexts/AuthContext';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { routes } from '@config/routes.tsx'
+import { ROUTES } from '@config/routes'
+import { Layout } from '@shared/components/layout/Layout'
+import { ProtectedRoute } from '@shared/components/route/ProtectedRoute'
+import { useAuth } from '@/contexts/AuthContext'
 
 function App() {
-  const location = useLocation();
-  const { isAuthenticated } = useAuth();
-  const isLoginPage = location.pathname === '/login';
+  const location = useLocation()
+  const { isAuthenticated } = useAuth()
+  const isLoginPage = location.pathname === ROUTES.LOGIN
 
-  // Sin sesion, todo excepto /login se manda al login. La decision se toma
-  // una sola vez aca en vez de envolver cada ruta: las rutas de /revision/* si
-  // llevan su propia ProtectedRoute porque tienen requisito de rol.
+  // Sin sesión, todo excepto /login se manda al login.
   const content = (
     <Routes>
       {routes.map((route, index) => (
@@ -27,17 +26,16 @@ function App() {
           }
         />
       ))}
-      <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
+      <Route
+        path="*"
+        element={<Navigate to={isAuthenticated ? ROUTES.DASHBOARD : ROUTES.LOGIN} replace />}
+      />
     </Routes>
-  );
+  )
 
-  if (isLoginPage) return content;
+  if (isLoginPage) return content
 
-  return (
-    <Layout>
-      {content}
-    </Layout>
-  );
+  return <Layout>{content}</Layout>
 }
 
-export default App;
+export default App

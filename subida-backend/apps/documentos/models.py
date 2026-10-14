@@ -114,3 +114,28 @@ class Documento(models.Model):
     def __str__(self):
         tipo = self.tipo_documento.nombre if self.tipo_documento else 'Sin clasificar'
         return f"{self.persona.codigo} - Pág {self.pagina_numero} - {tipo}"
+
+
+class SugerenciaKeyword(models.Model):
+    tipo_documento = models.ForeignKey(
+        TipoDocumento, on_delete=models.CASCADE, related_name='sugerencias_keyword'
+    )
+    palabra = models.CharField(max_length=100)
+    ratio = models.FloatField(help_text="Ratio de discriminación contra otros tipos")
+    frecuencia = models.IntegerField(help_text="Frecuencia en documentos verificados")
+    aceptada = models.BooleanField(
+        null=True, blank=True, default=None,
+        help_text="None=pendiente, True=aceptada, False=descartada"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'sugerencias_keyword'
+        ordering = ['-ratio', '-frecuencia']
+        verbose_name = 'sugerencia de keyword'
+        verbose_name_plural = 'sugerencias de keyword'
+
+    def __str__(self):
+        return f"{self.palabra} ({self.tipo_documento.nombre}) - ratio: {self.ratio}"
+

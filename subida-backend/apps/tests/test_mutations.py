@@ -3,6 +3,7 @@ from apps.personas.models import Persona
 from apps.tests.base import GraphQLTestCase
 from apps.tests.datos import DatosGraphQL
 from apps.users.models import User
+from apps.users.tokens import validar_token
 
 
 class MutacionPersonasTests(GraphQLTestCase):
@@ -333,7 +334,9 @@ class MutacionUsuariosTests(GraphQLTestCase):
         self.assertEqual(r['user']['username'], 'jperez')
         # `role` es String: llega el valor de la base, no el nombre del enum.
         self.assertEqual(r['user']['role'], 'admin')
-        self.assertTrue(r['token'].startswith('token-'))
+        user_validado = validar_token(r['token'])
+        self.assertIsNotNone(user_validado)
+        self.assertEqual(user_validado.username, 'jperez')
 
     def test_login_credenciales_incorrectas(self):
         User.objects.create_user(username='jperez', password='secreto123')
@@ -399,8 +402,10 @@ class ErroresBlandoTests(GraphQLTestCase):
             ('loginUser', {'username': 'nadie', 'password': 'x'}),
             ('createUser', {'username': 'x', 'password': 'y', 'email': 'a@b.c',
                              'firstName': 'A', 'lastName': 'B'}),
+            ('aceptarSugerencia', {'id': 999999, 'peso': 1}),
+            ('descartarSugerencia', {'id': 999999}),
         ]
-        self.assertEqual(len(casos), 11)
+        self.assertEqual(len(casos), 13)
 
         User.objects.create_user(username='x', password='y')
 
@@ -410,3 +415,56 @@ class ErroresBlandoTests(GraphQLTestCase):
                 r = self.mutacion(raiz, 'success', 'message', **variables)
                 self.assertIs(r['success'], False, msg=raiz)
                 self.assertTrue(r['message'], msg=raiz)
+
+
+class SugerenciasKeywordMutacionTests(GraphQLTestCase):
+    def setUp(self):
+        self.d = DatosGraphQL.crear()
+        from apps.documentos.models import SugerenciaKeyword
+        self.sug = SugerenciaKeyword.objects.create(
+            tipo_documento=self.d['tipo'],
+            palabra='reniec',
+            ratio=4.0,
+            frecuencia=8,
+            aceptada=None,
+        )
+
+    def test_aceptar_sugerencia_agrega_palabra_a_tipo_y_marca_aceptada(self):
+        r = self.mutacion(
+            'aceptarSugerencia', 'success', 'message',
+            'sugerencia { id aceptada } tipoDocumento { id palabrasClave }',
+            id=self.sug.id, peso=3,
+        )
+        self.assertIs(r['success'], True)
+        self.assertIs(r['sugerencia']['aceptada'], True)
+        self.assertIn('reniec:3', r['tipoDocumento']['palabrasClave'])
+        self.sug.refresh_from_db()
+        self.assertIs(self.sug.aceptada, True)
+
+    def test_descartar_sugerencia_marca_como_descartada(self):
+        r = self.mutacion(
+            'descartarSugerencia', 'success', 'message',
+            'sugerencia { id aceptada }',
+            id=self.sug.id,
+        )
+        self.assertIs(r['success'], True)
+        self.assertIs(r['sugerencia']['aceptada'], False)
+        self.sug.refresh_from_db()
+        self.assertIs(self.sug.aceptada, False)
+
+    def test_generar_sugerencias_keywords_ejecuta_y_retorna_payload(self):
+        # Crear documentos verificados con texto
+        Documento.objects.create(
+            persona=self.d['persona'],
+            tipo_documento=self.d['tipo'],
+            archivo_original='doc1.pdf',
+            pagina_numero=1,
+            texto_extraido='certificado oficialia civil bolivia nacimiento menor partida',
+            estado='verificado',
+        )
+        r = self.mutacion(
+            'generarSugerenciasKeywords', 'success', 'message', 'totalGeneradas', 'totalVerificados',
+            minDocs=1, top=3, limpiar=True,
+        )
+        self.assertIs(r['success'], True)
+        self.assertGreaterEqual(r['totalVerificados'], 1)
