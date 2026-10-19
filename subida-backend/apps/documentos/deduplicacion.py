@@ -40,8 +40,8 @@ def son_duplicados(phash_a: str, phash_b: str, umbral: int = UMBRAL_HAMMING) -> 
     return distancia_hamming(phash_a, phash_b) <= umbral
 
 
-def buscar_duplicado(phash, excluir_id=None):
-    """Devuelve el documento original que coincide con `phash`.
+def buscar_duplicado(phash, excluir_id=None, unidad=None):
+    """Devuelve el documento original que coincide con `phash` dentro de la misma unidad.
 
     Solo mira documentos con `phash` calculado.
     """
@@ -52,13 +52,55 @@ def buscar_duplicado(phash, excluir_id=None):
 
     qs = Documento.objects.filter(
         phash__isnull=False,
-    ).exclude(phash='').values_list('id', 'phash')
+    ).exclude(phash='')
+
+    if unidad is not None:
+        if isinstance(unidad, int) or (isinstance(unidad, str) and str(unidad).isdigit()):
+            qs = qs.filter(unidad_id=int(unidad))
+        elif hasattr(unidad, 'id'):
+            qs = qs.filter(unidad_id=unidad.id)
+        else:
+            qs = qs.filter(unidad=unidad)
 
     if excluir_id is not None:
         qs = qs.exclude(id=excluir_id)
 
-    for doc_id, candidato in qs:
+    for doc_id, candidato in qs.values_list('id', 'phash'):
         if son_duplicados(phash, candidato):
             return doc_id
 
     return None
+
+
+def buscar_pagina_duplicada(phash, excluir_id=None, unidad=None):
+    """Devuelve el id de la Pagina confirmada que coincide con `phash` dentro de la misma unidad.
+
+    Solo mira paginas con `phash` calculado y que esten en estado 'confirmada'.
+    """
+    if not phash:
+        return None
+
+    from apps.documentos.models import Pagina
+
+    qs = Pagina.objects.filter(
+        phash__isnull=False,
+        estado='confirmada',
+    ).exclude(phash='')
+
+    if unidad is not None:
+        if isinstance(unidad, int) or (isinstance(unidad, str) and str(unidad).isdigit()):
+            qs = qs.filter(unidad_id=int(unidad))
+        elif hasattr(unidad, 'id'):
+            qs = qs.filter(unidad_id=unidad.id)
+        else:
+            qs = qs.filter(unidad=unidad)
+
+    if excluir_id is not None:
+        qs = qs.exclude(id=excluir_id)
+
+    for pag_id, candidato in qs.values_list('id', 'phash'):
+        if son_duplicados(phash, candidato):
+            return pag_id
+
+    return None
+

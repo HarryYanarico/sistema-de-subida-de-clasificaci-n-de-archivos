@@ -1,24 +1,37 @@
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, List
+from datetime import datetime
 
 import strawberry
 import strawberry_django
 
 from apps.personas.schema import PersonaType
+from apps.users.schema import UnidadType
 
-from .models import TipoDocumento, Documento, SugerenciaKeyword
+from .models import TipoDocumento, Documento, SugerenciaKeyword, Lote, Grupo, Pagina
 
 
 @strawberry_django.type(
     TipoDocumento,
     fields=[
         'id', 'nombre', 'slug', 'palabras_clave',
-        'activo', 'created_at',
+        'color', 'activo', 'created_at',
     ],
 )
 class TipoDocumentoType:
+    unidad: Optional[UnidadType]
+
     @strawberry_django.field
     def keywords_obligatorias(self) -> list[str]:
         return list(self.keywords_obligatorias or [])
+
+    @strawberry_django.field
+    def firma_consolidada(self) -> strawberry.scalars.JSON:
+        return self.firma_consolidada or {}
+
+    @strawberry_django.field
+    def ejemplos_paginas(self) -> list[PaginaType]:
+        return list(self.ejemplos_paginas.all()[:20])
 
 
 @strawberry_django.type(
@@ -27,6 +40,111 @@ class TipoDocumentoType:
 )
 class SugerenciaKeywordType:
     tipo_documento: TipoDocumentoType
+
+
+@strawberry_django.type(
+    Pagina,
+    fields=[
+        'id', 'pdf_origen', 'nro_pagina_en_pdf', 'texto_ocr',
+        'phash', 'descartable', 'estado', 'created_at',
+    ],
+)
+class PaginaType:
+    unidad: Optional[UnidadType]
+
+    @strawberry_django.field
+    def lote_id(self) -> strawberry.ID:
+        return strawberry.ID(str(self.lote_id))
+
+    @strawberry_django.field
+    def grupo(self) -> Optional[GrupoType]:
+        return self.grupo
+
+    @strawberry_django.field
+    def firma_palabras(self) -> strawberry.scalars.JSON:
+        return self.firma_palabras or []
+
+    @strawberry_django.field
+    def firma_estructura(self) -> strawberry.scalars.JSON:
+        return self.firma_estructura or {}
+
+
+@strawberry.type
+class ParejaSugeridaType:
+    pagina_anverso_id: strawberry.ID
+    pagina_reverso_id: strawberry.ID
+
+
+@strawberry_django.type(
+    Grupo,
+    fields=[
+        'id', 'total_paginas', 'estado', 'created_at',
+    ],
+)
+class GrupoType:
+    unidad: Optional[UnidadType]
+    tipo_documento_sugerido: Optional[TipoDocumentoType]
+
+    @strawberry_django.field
+    def lote_id(self) -> strawberry.ID:
+        return strawberry.ID(str(self.lote_id))
+
+    @strawberry_django.field
+    def firma_consolidada(self) -> strawberry.scalars.JSON:
+        return self.firma_consolidada or {}
+
+    @strawberry_django.field
+    def paginas(self) -> list[PaginaType]:
+        return list(self.paginas.all().order_by('nro_pagina_en_pdf'))
+
+    @strawberry_django.field
+    def parejas_sugeridas(self) -> list[ParejaSugeridaType]:
+        from .agrupador import detectar_parejas_consecutivas
+        pags = list(self.paginas.all().order_by('nro_pagina_en_pdf'))
+        parejas = detectar_parejas_consecutivas(pags)
+        return [
+            ParejaSugeridaType(
+                pagina_anverso_id=strawberry.ID(str(p1.id)),
+                pagina_reverso_id=strawberry.ID(str(p2.id)),
+            )
+            for p1, p2 in parejas
+        ]
+
+
+@strawberry_django.type(
+    Lote,
+    fields=[
+        'id', 'estado', 'nombre_archivo_original',
+        'total_paginas', 'total_grupos', 'created_at',
+    ],
+)
+class LoteType:
+    unidad: Optional[UnidadType]
+
+    @strawberry_django.field
+    def grupos(self) -> list[GrupoType]:
+        return list(self.grupos.all().order_by('id'))
+
+    @strawberry_django.field
+    def paginas(self) -> list[PaginaType]:
+        return list(self.paginas.all().order_by('nro_pagina_en_pdf'))
+
+    @strawberry_django.field
+    def documentos(self) -> list[DocumentoType]:
+        return list(self.documentos.all().order_by('id'))
+
+    @strawberry_django.field
+    def parejas_sugeridas(self) -> list[ParejaSugeridaType]:
+        from .agrupador import detectar_parejas_consecutivas
+        pags = list(self.paginas.all().order_by('nro_pagina_en_pdf'))
+        parejas = detectar_parejas_consecutivas(pags)
+        return [
+            ParejaSugeridaType(
+                pagina_anverso_id=strawberry.ID(str(p1.id)),
+                pagina_reverso_id=strawberry.ID(str(p2.id)),
+            )
+            for p1, p2 in parejas
+        ]
 
 
 @strawberry_django.type(
@@ -48,18 +166,34 @@ class SugerenciaKeywordType:
     ],
 )
 class DocumentoType:
-    # Sin estas anotaciones, strawberry_django expone las relaciones como el
-    # tipo generico `DjangoModelType { pk: ID! }` y se pierde `persona { codigo }`.
     persona: PersonaType
     tipo_documento: Optional[TipoDocumentoType]
-    # Auto-FK. strawberry_django entrega la instancia, no el id, asi que el
-    # resolver lo aplana a id: el cliente necesita saber *cual* es el original,
-    # no recargar el DocumentoType entero.
+    unidad: Optional[UnidadType]
+
+    @strawberry_django.field
+    def lote(self) -> Optional[LoteType]:
+        return self.lote
+
+    @strawberry_django.field
+    def paginas(self) -> list[PaginaType]:
+        return list(self.paginas.all().order_by('nro_pagina_en_pdf'))
+
+    @strawberry_django.field
+    def es_doble_cara(self) -> bool:
+        return bool(self.es_doble_cara)
+
+    @strawberry_django.field
+    def nombre_final(self) -> str:
+        return self.nombre_final or ''
+
+    @strawberry_django.field
+    def total_paginas(self) -> int:
+        return self.total_paginas
+
     @strawberry_django.field
     def duplicado_de(self) -> Optional[strawberry.ID]:
-        # strawberry.ID y no int: el `id` de DocumentoType tambien se serializa
-        # como ID, y mezclar int con ID en el mismo tipo confunde al cliente.
         return strawberry.ID(str(self.duplicado_de_id)) if self.duplicado_de_id else None
+
 
 
 @strawberry.type
@@ -100,19 +234,34 @@ def _paginar(qs, limit: Optional[int], offset: Optional[int] = None):
 @strawberry.type
 class Query:
     @strawberry.field
-    def tipos_documento(self, activo: Optional[bool] = None) -> list[TipoDocumentoType]:
-        qs = TipoDocumento.objects.all()
+    def tipos_documento(self, info: strawberry.types.Info, activo: Optional[bool] = None) -> list[TipoDocumentoType]:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = TipoDocumento.objects.filter(unidad=unidad)
+        except Exception:
+            qs = TipoDocumento.objects.none()
         if activo is not None:
             qs = qs.filter(activo=activo)
         return qs
 
     @strawberry.field
-    def tipo_documento(self, id: int) -> Optional[TipoDocumentoType]:
-        return TipoDocumento.objects.filter(id=id).first()
+    def tipo_documento(self, info: strawberry.types.Info, id: int) -> Optional[TipoDocumentoType]:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            return TipoDocumento.objects.filter(id=id, unidad=unidad).first()
+        except Exception:
+            return None
 
     @strawberry.field
-    def documentos_persona(self, persona_id: int) -> DocumentoByPersona:
-        documentos = Documento.objects.filter(persona_id=persona_id)
+    def documentos_persona(self, info: strawberry.types.Info, persona_id: int) -> DocumentoByPersona:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            documentos = Documento.objects.filter(persona_id=persona_id, unidad=unidad)
+        except Exception:
+            documentos = Documento.objects.none()
         total = documentos.count()
         # Un duplicado tiene tipo asignado pero no cuenta como clasificado: es
         # una copia de otra pagina que ya se conto, y sumarlo seria reportar
@@ -129,24 +278,37 @@ class Query:
     @strawberry.field
     def documentos_pendientes(
         self,
+        info: strawberry.types.Info,
         limit: Optional[int] = None,
         offset: int = 0,
     ) -> list[DocumentoType]:
-        # 'sin_clasificar' entra junto a 'pendiente': las paginas que el
-        # clasificador no pudo resolver se listan aca, no se esconden. Los
-        # 'dudosa' tienen tipo asignado y van aparte (Fase 5).
-        qs = Documento.objects.filter(
-            estado__in=['pendiente', 'sin_clasificar'],
-            tipo_documento__isnull=True,
-        ).order_by('id')
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Documento.objects.filter(
+                unidad=unidad,
+                estado__in=['pendiente', 'sin_clasificar'],
+                tipo_documento__isnull=True,
+            ).order_by('id')
+        except Exception:
+            qs = Documento.objects.none()
         return _paginar(qs, limit, offset)
 
     @strawberry.field
-    def estadisticas_digitalizacion(self) -> EstadisticasDigitalizacionType:
-        """Métricas globales para el Dashboard de digitalización."""
+    def estadisticas_digitalizacion(self, info: strawberry.types.Info) -> EstadisticasDigitalizacionType:
+        """Métricas globales para el Dashboard de digitalización filtradas por unidad."""
+        from apps.core.tenancy import get_unidad_from_info
         from django.db.models import Count, Q
 
-        agregados = Documento.objects.aggregate(
+        try:
+            unidad = get_unidad_from_info(info)
+            doc_qs = Documento.objects.filter(unidad=unidad)
+            sug_qs = SugerenciaKeyword.objects.filter(tipo_documento__unidad=unidad, aceptada__isnull=True)
+        except Exception:
+            doc_qs = Documento.objects.none()
+            sug_qs = SugerenciaKeyword.objects.none()
+
+        agregados = doc_qs.aggregate(
             total=Count('id'),
             clasificados=Count('id', filter=Q(estado='clasificado')),
             verificados=Count('id', filter=Q(estado='verificado')),
@@ -165,7 +327,7 @@ class Query:
 
         efectivos = clasificados + verificados
         tasa = round((efectivos / total) * 100.0, 1) if total > 0 else 0.0
-        sug_pendientes = SugerenciaKeyword.objects.filter(aceptada__isnull=True).count()
+        sug_pendientes = sug_qs.count()
 
         return EstadisticasDigitalizacionType(
             total_documentos=total,
@@ -182,69 +344,169 @@ class Query:
     @strawberry.field
     def documentos_recientes(
         self,
+        info: strawberry.types.Info,
         limit: Optional[int] = 5,
     ) -> list[DocumentoType]:
-        """Últimos folios procesados en el sistema."""
-        qs = Documento.objects.select_related('persona', 'tipo_documento').order_by('-created_at', '-id')
+        """Últimos folios procesados en la unidad del usuario."""
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Documento.objects.filter(unidad=unidad).select_related('persona', 'tipo_documento').order_by('-created_at', '-id')
+        except Exception:
+            qs = Documento.objects.none()
         if limit is not None:
             qs = qs[:limit]
         return list(qs)
 
     # ------------------------------------------------------------------
-    # Colas de revision (Fase 5) — sistema single-tenant, sin filtro por
-    # unidad. NOTA DE SEGURIDAD: sigue sin haber sesion real (el login emite
-    # `token=f"token-{user.id}"` y ningun resolver recibe el usuario
-    # autenticado). Las guardas del frontend son UX, no control de acceso.
+    # Colas de revision filtradas por unidad
     # ------------------------------------------------------------------
 
     @strawberry.field
     def documentos_dudosos(
         self,
+        info: strawberry.types.Info,
         limit: Optional[int] = None,
         offset: int = 0,
     ) -> list[DocumentoType]:
-        """Paginas con tipo asignado pero eleccion no defendible.
-
-        Van ordenadas por score ascendente: las mas dudosas primero, que son
-        las que mas aportan al revisor.
-        """
-        qs = Documento.objects.filter(
-            estado='dudosa',
-        ).order_by('score', 'id')
+        """Paginas con tipo asignado pero eleccion no defendible."""
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Documento.objects.filter(
+                unidad=unidad,
+                estado='dudosa',
+            ).order_by('score', 'id')
+        except Exception:
+            qs = Documento.objects.none()
         return _paginar(qs, limit, offset)
 
     @strawberry.field
     def documentos_sin_clasificar(
         self,
+        info: strawberry.types.Info,
         limit: Optional[int] = None,
         offset: int = 0,
     ) -> list[DocumentoType]:
         """Paginas donde el clasificador no encontro ningun tipo."""
-        qs = Documento.objects.filter(
-            estado__in=['pendiente', 'sin_clasificar'],
-            tipo_documento__isnull=True,
-        ).order_by('id')
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Documento.objects.filter(
+                unidad=unidad,
+                estado__in=['pendiente', 'sin_clasificar'],
+                tipo_documento__isnull=True,
+            ).order_by('id')
+        except Exception:
+            qs = Documento.objects.none()
         return _paginar(qs, limit, offset)
 
     @strawberry.field
     def documentos_duplicados(
         self,
+        info: strawberry.types.Info,
         limit: Optional[int] = None,
         offset: int = 0,
     ) -> list[DocumentoType]:
         """Paginas marcadas como copia perceptual de otra ya presente."""
-        qs = Documento.objects.filter(
-            estado='duplicado',
-        ).order_by('id')
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Documento.objects.filter(
+                unidad=unidad,
+                estado='duplicado',
+            ).order_by('id')
+        except Exception:
+            qs = Documento.objects.none()
         return _paginar(qs, limit, offset)
 
     @strawberry.field
     def sugerencias_keyword(
         self,
+        info: strawberry.types.Info,
         tipo_documento_id: int,
     ) -> list[SugerenciaKeywordType]:
         """Sugerencias estadísticas de palabras clave para un tipo de documento."""
-        return SugerenciaKeyword.objects.filter(
-            tipo_documento_id=tipo_documento_id,
-            aceptada__isnull=True,
-        ).order_by('-ratio', '-frecuencia')
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            return SugerenciaKeyword.objects.filter(
+                tipo_documento_id=tipo_documento_id,
+                tipo_documento__unidad=unidad,
+                aceptada__isnull=True,
+            ).order_by('-ratio', '-frecuencia')
+        except Exception:
+            return []
+
+    @strawberry.field
+    def lotes(
+        self,
+        info: strawberry.types.Info,
+        limit: Optional[int] = 50,
+        offset: Optional[int] = 0,
+        estado: Optional[str] = None,
+    ) -> list[LoteType]:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Lote.objects.filter(unidad=unidad)
+        except Exception:
+            return []
+        if estado:
+            qs = qs.filter(estado=estado)
+        return list(_paginar(qs.order_by('-created_at'), limit, offset))
+
+    @strawberry.field
+    def lote(self, info: strawberry.types.Info, id: strawberry.ID) -> Optional[LoteType]:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            return Lote.objects.filter(id=int(id), unidad=unidad).first()
+        except Exception:
+            return None
+
+    @strawberry.field
+    def grupos(self, info: strawberry.types.Info, lote_id: strawberry.ID) -> list[GrupoType]:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            return list(Grupo.objects.filter(lote_id=int(lote_id), unidad=unidad).order_by('id'))
+        except Exception:
+            return []
+
+    @strawberry.field
+    def paginas(
+        self,
+        info: strawberry.types.Info,
+        lote_id: Optional[strawberry.ID] = None,
+        grupo_id: Optional[strawberry.ID] = None,
+        limit: Optional[int] = 50,
+        offset: Optional[int] = 0,
+    ) -> list[PaginaType]:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Pagina.objects.filter(unidad=unidad)
+        except Exception:
+            return []
+        if lote_id:
+            qs = qs.filter(lote_id=int(lote_id))
+        if grupo_id:
+            qs = qs.filter(grupo_id=int(grupo_id))
+        return list(_paginar(qs.order_by('nro_pagina_en_pdf'), limit, offset))
+
+    @strawberry.field
+    def paginas_duplicadas(
+        self,
+        info: strawberry.types.Info,
+        limit: Optional[int] = 50,
+        offset: Optional[int] = 0,
+    ) -> list[PaginaType]:
+        """Devuelve las páginas marcadas como duplicadas dentro de la unidad del request."""
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Pagina.objects.filter(unidad=unidad, estado='duplicada')
+        except Exception:
+            return []
+        return list(_paginar(qs.order_by('-created_at', 'id'), limit, offset))

@@ -17,6 +17,13 @@ export const ROUTES = {
     PENDIENTES: '/documentos/pendientes',
   },
 
+  // Módulo de Lotes y Agrupamiento
+  LOTES: {
+    ROOT: '/lotes',
+    AGRUPAR: (id: string | number = ':loteId') => `/lotes/${id}/agrupar`,
+    DETALLE: (id: string | number = ':loteId') => `/lotes/${id}`,
+  },
+
   // Módulo de Colas de Revisión Humana
   REVISION: {
     ROOT: '/revision',

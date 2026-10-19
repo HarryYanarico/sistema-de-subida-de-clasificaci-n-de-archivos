@@ -8,9 +8,25 @@ from .models import User
 from .tokens import generar_token
 
 
+from apps.core.models import Unidad
+
+
+@strawberry_django.type(Unidad, fields=['id', 'codigo', 'nombre', 'activa', 'created_at'])
+class UnidadType:
+    pass
+
+
 @strawberry_django.type(User, fields=['id', 'username', 'email', 'first_name', 'last_name', 'role', 'telefono'])
 class UserType:
-    pass
+    cod_empleado: Optional[str] = strawberry_django.field(default='')
+
+    @strawberry_django.field
+    def rol_slug(self) -> str:
+        return 'admin-archivos' if self.role == 'admin' else 'operador'
+
+    @strawberry_django.field
+    def unidad(self) -> Optional[UnidadType]:
+        return self.unidad
 
 
 @strawberry.type
@@ -30,7 +46,14 @@ class CreateUser:
 
 @strawberry.type
 class Query:
-    pass
+    @strawberry.field
+    def me(self, info: strawberry.types.Info) -> Optional[UserType]:
+        context = getattr(info, 'context', None)
+        request = getattr(context, 'request', context) if not isinstance(context, dict) else context.get('request', context)
+        user = getattr(request, 'user', None)
+        if user and user.is_authenticated:
+            return user
+        return None
 
 
 @strawberry.type

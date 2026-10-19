@@ -8,6 +8,7 @@ export interface EnvironmentConfig {
   readonly graphqlUrl: string
   readonly apiPrefix: string
   readonly appTitle: string
+  readonly admincentralLoginUrl: string
   readonly isDevelopment: boolean
   readonly isProduction: boolean
   readonly isTest: boolean
@@ -27,6 +28,7 @@ const rawApiUrl = (import.meta.env.VITE_API_URL || '').trim()
 const rawGraphqlUrl = (import.meta.env.VITE_GRAPHQL_URL || '').trim()
 const rawGraphqlPath = (import.meta.env.VITE_GRAPHQL_PATH || '/graphql/').trim()
 const rawApiPrefix = (import.meta.env.VITE_API_PREFIX || '/api').trim()
+const rawAdmincentralLoginUrl = (import.meta.env.VITE_ADMINCENTRAL_LOGIN_URL || '/login').trim()
 
 // Si la URL apunta a un contenedor interno de Docker (ej. http://backend:8000), el navegador del host
 // NO puede resolverlo por DNS. En ese caso usamos string vacío para que el frontend use rutas relativas
@@ -50,6 +52,7 @@ export const env: EnvironmentConfig = {
   graphqlUrl,
   apiPrefix: rawApiPrefix,
   appTitle: import.meta.env.VITE_APP_TITLE || 'Sistema de Digitalización de Archivos',
+  admincentralLoginUrl: rawAdmincentralLoginUrl,
   isDevelopment: import.meta.env.DEV,
   isProduction: import.meta.env.PROD,
   isTest: import.meta.env.MODE === 'test',

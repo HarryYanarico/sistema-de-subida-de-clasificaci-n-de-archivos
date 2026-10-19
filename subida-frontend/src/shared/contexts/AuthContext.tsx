@@ -1,74 +1,99 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
-import { STORAGE_KEYS } from '@config/constants'
-import { User } from '../types'
+import { apolloClient } from '@graphql/client'
+import { ME_QUERY } from '@graphql/queries/auth.queries'
+import { env } from '@config/environment'
+import { User, Rol } from '../types'
 
 interface AuthContextType {
   user: User | null
   token: string | null
   isAuthenticated: boolean
-  /** `true` mientras lee localStorage, para no redirigir antes de saber. */
+  /** `true` mientras verifica la sesión con el backend, para no redirigir antes de saber. */
   loading: boolean
-  login: (token: string, user: User) => void
+  login: (token?: string, user?: User) => void
   logout: () => void
+  refetchUser: () => Promise<void>
   /** `true` si el usuario tiene alguno de los roles indicados. */
   tieneRol: (...roles: string[]) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const TOKEN_KEY = STORAGE_KEYS.TOKEN
-const USER_KEY = STORAGE_KEYS.USER
-
-function leerSesion(): { token: string | null; user: User | null } {
-  try {
-    const token = localStorage.getItem(TOKEN_KEY)
-    const userRaw = localStorage.getItem(USER_KEY)
-    // Si falta uno de los dos, la sesion esta a medias y se trata como
-    // ausente: dejarla "funcionando" dejaria la UI con un usuario sin token.
-    if (!token || !userRaw) return { token: null, user: null }
-    return { token, user: JSON.parse(userRaw) as User }
-  } catch {
-    // localStorage puede lanzar si el JSON esta corrupto o si el navegador
-    // bloquea el almacenamiento. En ambos casos: sesion no disponible.
-    return { token: null, user: null }
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [sesion, setSesion] = useState(leerSesion)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    setSesion(leerSesion())
-    setLoading(false)
+  const cargarUsuario = useCallback(async () => {
+    try {
+      const { data } = await apolloClient.query({
+        query: ME_QUERY,
+        fetchPolicy: 'network-only',
+      })
+      if (data?.me) {
+        const raw = data.me
+        setUser({
+          id: raw.id,
+          username: raw.username,
+          email: raw.email,
+          first_name: raw.firstName,
+          last_name: raw.lastName,
+          role: raw.role as Rol,
+          rolSlug: raw.rolSlug,
+          codEmpleado: raw.codEmpleado,
+          telefono: raw.telefono || '',
+          unidad: raw.unidad,
+        })
+      } else {
+        setUser(null)
+      }
+    } catch {
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const login = useCallback((token: string, user: User) => {
-    localStorage.setItem(TOKEN_KEY, token)
-    localStorage.setItem(USER_KEY, JSON.stringify(user))
-    setSesion({ token, user })
-  }, [])
+  useEffect(() => {
+    cargarUsuario()
+  }, [cargarUsuario])
+
+  const login = useCallback(
+    (_token?: string, userNuevo?: User) => {
+      if (userNuevo) {
+        setUser(userNuevo)
+      }
+      cargarUsuario()
+    },
+    [cargarUsuario]
+  )
 
   const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
-    setSesion({ token: null, user: null })
+    apolloClient.clearStore().catch(() => {})
+    setUser(null)
+    const loginUrl = env.admincentralLoginUrl || '/login'
+    if (loginUrl.startsWith('http://') || loginUrl.startsWith('https://')) {
+      window.location.href = loginUrl
+    }
   }, [])
 
   const tieneRol = useCallback(
-    (...roles: string[]) => !!sesion.user && roles.includes(sesion.user.role),
-    [sesion.user]
+    (...roles: string[]) => {
+      if (!user) return false
+      return roles.includes(user.role) || (!!user.rolSlug && roles.includes(user.rolSlug))
+    },
+    [user]
   )
 
   return (
     <AuthContext.Provider
       value={{
-        user: sesion.user,
-        token: sesion.token,
-        isAuthenticated: !!sesion.token && !!sesion.user,
+        user,
+        token: null,
+        isAuthenticated: !!user,
         loading,
         login,
         logout,
+        refetchUser: cargarUsuario,
         tieneRol,
       }}
     >
@@ -84,3 +109,4 @@ export function useAuth() {
   }
   return context
 }
+

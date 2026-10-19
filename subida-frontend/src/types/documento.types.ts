@@ -28,9 +28,55 @@ export interface EntradaHistorial {
   keywordsAnteriores?: string[] | null
 }
 
+export interface Pagina {
+  id: number
+  loteId: number | string
+  pdfOrigen: string
+  nroPaginaEnPdf: number
+  textoOcr: string
+  firmaPalabras?: string[]
+  firmaEstructura?: Record<string, any>
+  phash?: string | null
+  descartable?: boolean
+  grupo?: Grupo | null
+  estado: 'pendiente' | 'agrupada' | 'confirmada' | 'descartada' | 'sin_agrupar' | 'duplicada' | string
+  createdAt?: string
+}
+
+export interface ParejaSugerida {
+  paginaAnversoId: string | number
+  paginaReversoId: string | number
+}
+
+export interface Grupo {
+  id: number
+  loteId: number | string
+  firmaConsolidada?: Record<string, any>
+  totalPaginas: number
+  tipoDocumentoSugerido?: TipoDocumento | null
+  estado: 'nuevo' | 'coincide_con_tipo' | 'confirmado' | 'rechazado' | string
+  paginas?: Pagina[]
+  parejasSugeridas?: ParejaSugerida[]
+  createdAt?: string
+}
+
+export interface Lote {
+  id: number
+  estado: 'procesando' | 'pendiente_nombres' | 'confirmado' | 'descartado' | string
+  nombreArchivoOriginal: string
+  totalPaginas: number
+  totalGrupos: number
+  grupos?: Grupo[]
+  paginas?: Pagina[]
+  documentos?: Documento[]
+  parejasSugeridas?: ParejaSugerida[]
+  createdAt?: string
+}
+
 export interface Documento {
   id: number
-  persona: Persona
+  persona?: Persona | null
+
   tipo_documento?: TipoDocumento | null
   tipoDocumento?: TipoDocumento | null
   archivo_original?: string
@@ -38,7 +84,7 @@ export interface Documento {
   archivoNombre?: string
   archivo_nombre?: string
   pagina_numero?: number
-  paginaNumero: number
+  paginaNumero?: number
   texto_extraido?: string
   textoExtraido?: string
   estado: EstadoDocumento | string
@@ -52,6 +98,12 @@ export interface Documento {
   duplicadoDe?: Documento | null
   created_at?: string
   createdAt?: string
+  // Nuevos campos Fase 2:
+  lote?: Lote | null
+  paginas?: Pagina[]
+  esDobleCara?: boolean
+  nombreFinal?: string
+  totalPaginas?: number
 }
 
 export interface DocumentoByPersona {
@@ -61,6 +113,7 @@ export interface DocumentoByPersona {
   clasificados: number
   pendientes: number
 }
+
 
 // -----------------------------------------------------------------------------
 // Ingesta y Procesamiento de Lotes (Batch Upload)

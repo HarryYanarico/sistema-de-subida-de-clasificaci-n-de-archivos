@@ -4,8 +4,14 @@ from apps.personas.models import Persona
 
 
 class TipoDocumento(models.Model):
+    unidad = models.ForeignKey(
+        'core.Unidad', on_delete=models.CASCADE, related_name='tipos_documento', verbose_name='Unidad'
+    )
     nombre = models.CharField(max_length=255)
-    slug = models.SlugField(max_length=255, unique=True)
+    slug = models.SlugField(max_length=255)
+    color = models.CharField(max_length=50, blank=True, default='#3B82F6')
+    firma_consolidada = models.JSONField(default=dict, blank=True)
+    ejemplos_paginas = models.ManyToManyField('Pagina', blank=True, related_name='tipos_ejemplo')
     palabras_clave = models.TextField(
         help_text="Formato: palabra:peso,palabra:peso (peso 1-5, default 1)"
     )
@@ -23,6 +29,7 @@ class TipoDocumento(models.Model):
     class Meta:
         db_table = 'tipos_documento'
         ordering = ['nombre']
+        unique_together = [('slug', 'unidad')]
         verbose_name = 'tipo de documento'
         verbose_name_plural = 'tipos de documento'
 
@@ -44,28 +51,180 @@ class TipoDocumento(models.Model):
 
         return parsear_palabras_clave(self.palabras_clave)
 
+    def save(self, *args, **kwargs):
+        if not self.unidad_id:
+            from apps.core.models import Unidad
+            legacy, _ = Unidad.objects.get_or_create(codigo="LEGACY", defaults={"nombre": "Unidad Legacy Transitoria"})
+            self.unidad = legacy
+        super().save(*args, **kwargs)
+
+
+class Lote(models.Model):
+    ESTADO_CHOICES = [
+        ('procesando', 'Procesando'),
+        ('pendiente_nombres', 'Pendiente de nombres'),
+        ('confirmado', 'Confirmado'),
+        ('descartado', 'Descartado'),
+    ]
+
+    unidad = models.ForeignKey(
+        'core.Unidad', on_delete=models.CASCADE, related_name='lotes', verbose_name='Unidad'
+    )
+    subido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='lotes_subidos', verbose_name='Subido por'
+    )
+    estado = models.CharField(max_length=30, choices=ESTADO_CHOICES, default='procesando')
+    nombre_archivo_original = models.CharField(max_length=500, blank=True, default='')
+    total_paginas = models.IntegerField(default=0)
+    total_grupos = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'lotes'
+        ordering = ['-created_at']
+        verbose_name = 'lote'
+        verbose_name_plural = 'lotes'
+
+    def __str__(self):
+        return f"Lote {self.id} ({self.nombre_archivo_original}) - {self.estado}"
+
+    def save(self, *args, **kwargs):
+        if not self.unidad_id:
+            from apps.core.models import Unidad
+            legacy, _ = Unidad.objects.get_or_create(codigo="LEGACY", defaults={"nombre": "Unidad Legacy Transitoria"})
+            self.unidad = legacy
+        super().save(*args, **kwargs)
+
+
+class Grupo(models.Model):
+    ESTADO_CHOICES = [
+        ('nuevo', 'Nuevo'),
+        ('coincide_con_tipo', 'Coincide con tipo'),
+        ('confirmado', 'Confirmado'),
+        ('rechazado', 'Rechazado'),
+    ]
+
+    unidad = models.ForeignKey(
+        'core.Unidad', on_delete=models.CASCADE, related_name='grupos', verbose_name='Unidad'
+    )
+    lote = models.ForeignKey(
+        Lote, on_delete=models.CASCADE, related_name='grupos', verbose_name='Lote'
+    )
+    firma_consolidada = models.JSONField(default=dict, blank=True)
+    total_paginas = models.IntegerField(default=0)
+    tipo_documento_sugerido = models.ForeignKey(
+        TipoDocumento, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='grupos_sugeridos', verbose_name='Tipo de documento sugerido'
+    )
+    estado = models.CharField(max_length=30, choices=ESTADO_CHOICES, default='nuevo')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'grupos'
+        ordering = ['id']
+        verbose_name = 'grupo'
+        verbose_name_plural = 'grupos'
+
+    def __str__(self):
+        return f"Grupo {self.id} (Lote {self.lote_id}) - {self.estado} ({self.total_paginas} págs)"
+
+    def save(self, *args, **kwargs):
+        if not self.unidad_id and self.lote_id and getattr(self.lote, 'unidad_id', None):
+            self.unidad = self.lote.unidad
+        elif not self.unidad_id:
+            from apps.core.models import Unidad
+            legacy, _ = Unidad.objects.get_or_create(codigo="LEGACY", defaults={"nombre": "Unidad Legacy Transitoria"})
+            self.unidad = legacy
+        super().save(*args, **kwargs)
+
+
+class Pagina(models.Model):
+    ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('agrupada', 'Agrupada'),
+        ('confirmada', 'Confirmada'),
+        ('descartada', 'Descartada'),
+        ('sin_agrupar', 'Sin agrupar'),
+        ('duplicada', 'Duplicada'),
+    ]
+
+    unidad = models.ForeignKey(
+        'core.Unidad', on_delete=models.CASCADE, related_name='paginas', verbose_name='Unidad'
+    )
+    lote = models.ForeignKey(
+        Lote, on_delete=models.CASCADE, related_name='paginas', verbose_name='Lote'
+    )
+    pdf_origen = models.CharField(max_length=500, help_text="Nombre o ruta del PDF origen")
+    nro_pagina_en_pdf = models.IntegerField(help_text="Número de página en el PDF (1-indexado)")
+    texto_ocr = models.TextField(blank=True, default='')
+    firma_palabras = models.JSONField(default=list, blank=True, help_text="Lista de top-N palabras normalizadas")
+    firma_estructura = models.JSONField(default=dict, blank=True, help_text="{largo, ratio_numeros, patrones}")
+    phash = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    descartable = models.BooleanField(default=False)
+    grupo = models.ForeignKey(
+        Grupo, on_delete=models.SET_NULL, null=True, blank=True, related_name='paginas'
+    )
+    estado = models.CharField(max_length=30, choices=ESTADO_CHOICES, default='pendiente')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'paginas'
+        ordering = ['lote', 'nro_pagina_en_pdf']
+        verbose_name = 'página'
+        verbose_name_plural = 'páginas'
+
+    def __str__(self):
+        return f"Pág {self.nro_pagina_en_pdf} (Lote {self.lote_id}) - {self.estado}"
+
+    def save(self, *args, **kwargs):
+        if not self.unidad_id and self.lote_id and getattr(self.lote, 'unidad_id', None):
+            self.unidad = self.lote.unidad
+        elif not self.unidad_id:
+            from apps.core.models import Unidad
+            legacy, _ = Unidad.objects.get_or_create(codigo="LEGACY", defaults={"nombre": "Unidad Legacy Transitoria"})
+            self.unidad = legacy
+        super().save(*args, **kwargs)
 
 
 class Documento(models.Model):
-    # 'pendiente' se conserva: hay documentos historicos con ese valor y la
-    # mutation `deleteTipoDocumento` tambien lo usa al desenlazar un tipo. Se
-    # distingue de 'sin_clasificar' (el clasificador no encontro nada), de
-    # 'dudosa' (encontro algo pero la eleccion no es defendible) y de
-    # 'duplicado' (copia de otra pagina ya presente).
     ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('confirmado', 'Confirmado'),
+        ('verificado', 'Verificado'),
+        # Conservados para retrocompatibilidad con registros existentes
         ('clasificado', 'Clasificado'),
         ('dudosa', 'Dudosa'),
         ('duplicado', 'Duplicado'),
-        ('pendiente', 'Pendiente'),
         ('sin_clasificar', 'Sin clasificar'),
-        ('verificado', 'Verificado'),
     ]
 
-    persona = models.ForeignKey(Persona, on_delete=models.CASCADE, related_name='documentos')
+    unidad = models.ForeignKey(
+        'core.Unidad', on_delete=models.CASCADE, related_name='documentos', verbose_name='Unidad'
+    )
+    lote = models.ForeignKey(
+        Lote, on_delete=models.CASCADE, null=True, blank=True, related_name='documentos', verbose_name='Lote'
+    )
     tipo_documento = models.ForeignKey(
         TipoDocumento, on_delete=models.SET_NULL, null=True, blank=True, related_name='documentos'
     )
-    archivo_original = models.CharField(max_length=500, help_text="Ruta del PDF original en MinIO")
+    paginas = models.ManyToManyField(
+        Pagina, related_name='documentos', blank=True
+    )
+    es_doble_cara = models.BooleanField(default=False)
+    estado = models.CharField(max_length=30, choices=ESTADO_CHOICES, default='pendiente')
+    nombre_final = models.CharField(max_length=255, blank=True, default='')
+    historial_clasificacion = models.JSONField(
+        default=list, blank=True,
+        help_text="Trazabilidad de las correcciones humanas o asignaciones."
+    )
+
+    # Campos conservados para compatibilidad con el pipeline y vistas actuales
+    persona = models.ForeignKey(Persona, on_delete=models.CASCADE, null=True, blank=True, related_name='documentos')
+    archivo_original = models.CharField(max_length=500, blank=True, default='', help_text="Ruta del PDF original en MinIO")
     subido_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='documentos_subidos', verbose_name='Subido por'
@@ -74,9 +233,8 @@ class Documento(models.Model):
         max_length=500, null=True, blank=True,
         help_text="Ruta de la página individual en MinIO (obsoleto, se extrae on-the-fly)"
     )
-    pagina_numero = models.IntegerField()
+    pagina_numero = models.IntegerField(default=1)
     texto_extraido = models.TextField(blank=True, default='')
-    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
     score = models.FloatField(
         null=True, blank=True,
         help_text="Puntaje del clasificador local. Null si no se pudo clasificar",
@@ -84,14 +242,6 @@ class Documento(models.Model):
     keywords_matcheadas = models.JSONField(
         default=list, blank=True,
         help_text="Palabras clave que el clasificador local encontro en el texto",
-    )
-    historial_clasificacion = models.JSONField(
-        default=list, blank=True,
-        help_text=(
-            "Trazabilidad de las correcciones humanas. Una entrada por "
-            "reclasificacion: quien, que estado tenia, que tipo tenia, que "
-            "tipo quedo, cuando y con que score."
-        ),
     )
     phash = models.CharField(
         max_length=64, null=True, blank=True, db_index=True,
@@ -107,13 +257,32 @@ class Documento(models.Model):
 
     class Meta:
         db_table = 'documentos'
-        ordering = ['persona', 'pagina_numero']
+        ordering = ['id']
         verbose_name = 'documento'
         verbose_name_plural = 'documentos'
 
     def __str__(self):
-        tipo = self.tipo_documento.nombre if self.tipo_documento else 'Sin clasificar'
-        return f"{self.persona.codigo} - Pág {self.pagina_numero} - {tipo}"
+        nombre = self.nombre_final or (self.tipo_documento.nombre if self.tipo_documento else 'Sin clasificar')
+        return f"Doc {self.id} - {nombre} ({self.estado})"
+
+    @property
+    def total_paginas(self):
+        count = self.paginas.count()
+        return count if count > 0 else 1
+
+    def save(self, *args, **kwargs):
+        if not self.unidad_id:
+            if self.lote_id and getattr(self.lote, 'unidad_id', None):
+                self.unidad = self.lote.unidad
+            elif self.persona_id and getattr(self.persona, 'unidad_id', None):
+                self.unidad = self.persona.unidad
+            elif self.tipo_documento_id and getattr(self.tipo_documento, 'unidad_id', None):
+                self.unidad = self.tipo_documento.unidad
+            else:
+                from apps.core.models import Unidad
+                legacy, _ = Unidad.objects.get_or_create(codigo="LEGACY", defaults={"nombre": "Unidad Legacy Transitoria"})
+                self.unidad = legacy
+        super().save(*args, **kwargs)
 
 
 class SugerenciaKeyword(models.Model):
@@ -138,4 +307,3 @@ class SugerenciaKeyword(models.Model):
 
     def __str__(self):
         return f"{self.palabra} ({self.tipo_documento.nombre}) - ratio: {self.ratio}"
-

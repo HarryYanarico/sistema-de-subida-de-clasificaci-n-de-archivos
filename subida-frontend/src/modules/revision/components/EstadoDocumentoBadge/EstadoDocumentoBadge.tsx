@@ -12,6 +12,7 @@ const ESTADOS: Record<
   verificado: { label: 'Verificado', variant: 'success', icon: ShieldCheck },
   dudosa: { label: 'Dudosa', variant: 'warning', icon: HelpCircle },
   duplicado: { label: 'Duplicado', variant: 'destructive', icon: Copy },
+  duplicada: { label: 'Duplicada', variant: 'destructive', icon: Copy },
   sin_clasificar: { label: 'Sin clasificar', variant: 'secondary', icon: FileQuestion },
   pendiente: { label: 'Pendiente', variant: 'secondary', icon: FileQuestion },
 }

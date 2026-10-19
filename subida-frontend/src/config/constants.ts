@@ -37,6 +37,7 @@ export const DOCUMENTO_ESTADOS = {
   CLASIFICADO: 'clasificado',
   DUDOSA: 'dudosa',
   DUPLICADO: 'duplicado',
+  DUPLICADA: 'duplicada',
   PENDIENTE: 'pendiente',
   SIN_CLASIFICAR: 'sin_clasificar',
   VERIFICADO: 'verificado',

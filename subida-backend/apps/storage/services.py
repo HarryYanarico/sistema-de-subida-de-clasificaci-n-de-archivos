@@ -30,6 +30,19 @@ class MinIOService:
         )
         return key
 
+    def upload_thumbnail(self, codigo_unidad: str, thumb_uuid: str, thumb_content: bytes) -> str:
+        key = f"unidades/{codigo_unidad}/thumbs/{thumb_uuid}.png"
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=thumb_content,
+                ContentType='image/png',
+            )
+        except Exception:
+            pass
+        return key
+
     def get_file(self, key: str) -> bytes:
         response = self.client.get_object(Bucket=self.bucket, Key=key)
         return response['Body'].read()

@@ -4,12 +4,12 @@ from typing import Optional
 # pyrefly: ignore [missing-import]
 import strawberry
 
-from .models import TipoDocumento, Documento, SugerenciaKeyword
-from .schema import TipoDocumentoType, DocumentoType, SugerenciaKeywordType
+from .models import TipoDocumento, Documento, SugerenciaKeyword, Lote, Pagina, Grupo
+from .schema import TipoDocumentoType, DocumentoType, SugerenciaKeywordType, LoteType
 
 
 def clasificar_documento(doc):
-    """Reclasifica un documento con el clasificador local.
+    """Reclasifica un documento con el clasificador local, filtrando por unidad.
 
     Delega en `apps.storage.clasificador` para que la ingesta y esta mutation
     compartan exactamente el mismo criterio: si divergen, los documentos
@@ -18,6 +18,8 @@ def clasificar_documento(doc):
     from apps.storage.clasificador import clasificar, estado_desde_resultado
 
     tipos = TipoDocumento.objects.filter(activo=True)
+    if getattr(doc, 'unidad_id', None):
+        tipos = tipos.filter(unidad_id=doc.unidad_id)
 
     resultado = clasificar(doc.texto_extraido, tipos)
 
@@ -28,10 +30,12 @@ def clasificar_documento(doc):
     doc.save()
 
 
-def reclasificar_todos():
+def reclasificar_todos(unidad=None):
     # Los duplicados se saltan: reclasificarlos no cambia el hecho de que son
     # una copia, y hacerlos reaparecer en la cola seria revisar dos veces lo mismo.
     qs = Documento.objects.exclude(texto_extraido='').exclude(estado='duplicado')
+    if unidad is not None:
+        qs = qs.filter(unidad=unidad)
     for doc in qs:
         clasificar_documento(doc)
 
@@ -105,7 +109,9 @@ def _limpiar_obligatorias(valores):
 
 
 def _slug_de(nombre):
-    return re.sub(r'[^a-z0-9]+', '-', nombre.lower()).strip('-')
+    import unicodedata
+    limpio = unicodedata.normalize('NFKD', nombre).encode('ASCII', 'ignore').decode('utf-8').lower()
+    return re.sub(r'[^a-z0-9]+', '-', limpio).strip('-')
 
 
 @strawberry.type
@@ -180,27 +186,61 @@ class GenerarSugerenciasKeywords:
     total_verificados: int
 
 
+@strawberry.type
+class CrearDocumentoConPaginas:
+    documento: Optional[DocumentoType]
+    advertencia: Optional[str]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class AgregarPaginaADocumento:
+    documento: Optional[DocumentoType]
+    advertencia: Optional[str]
+    success: bool
+    message: str
+
+
+@strawberry.type
+class QuitarPaginaDeDocumento:
+    documento: Optional[DocumentoType]
+    success: bool
+    message: str
+
+
+@strawberry.input
+class AsignacionGrupoInput:
+    grupo_id: strawberry.ID
+    tipo_documento_id: Optional[int] = None
+    nombre_nuevo_tipo: Optional[str] = None
+    es_doble_cara: Optional[bool] = None
+
 
 @strawberry.type
 class Mutation:
     @strawberry.mutation
     def create_tipo_documento(
         self,
+        info: strawberry.types.Info,
         nombre: str,
         palabras_clave: str,
         keywords_obligatorias: Optional[list[str]] = None,
     ) -> CreateTipoDocumento:
+        from apps.core.tenancy import get_unidad_from_info
         try:
+            unidad = get_unidad_from_info(info)
             slug = _slug_de(nombre)
-            if TipoDocumento.objects.filter(slug=slug).exists():
-                return CreateTipoDocumento(tipo_documento=None, success=False, message="Ya existe un tipo con ese nombre")
+            if TipoDocumento.objects.filter(slug=slug, unidad=unidad).exists():
+                return CreateTipoDocumento(tipo_documento=None, success=False, message="Ya existe un tipo con ese nombre en esta unidad")
             tipo = TipoDocumento.objects.create(
+                unidad=unidad,
                 nombre=nombre,
                 slug=slug,
                 palabras_clave=palabras_clave,
                 keywords_obligatorias=_limpiar_obligatorias(keywords_obligatorias),
             )
-            reclasificar_todos()
+            reclasificar_todos(unidad=unidad)
             return CreateTipoDocumento(tipo_documento=tipo, success=True, message="Tipo de documento creado")
         except Exception as e:
             return CreateTipoDocumento(tipo_documento=None, success=False, message=str(e))
@@ -208,18 +248,25 @@ class Mutation:
     @strawberry.mutation
     def update_tipo_documento(
         self,
+        info: strawberry.types.Info,
         id: int,
         nombre: Optional[str] = None,
         palabras_clave: Optional[str] = None,
         keywords_obligatorias: Optional[list[str]] = None,
         activo: Optional[bool] = None,
     ) -> UpdateTipoDocumento:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            tipo = TipoDocumento.objects.filter(id=id).first()
+            unidad = get_unidad_from_info(info)
+            tipo = TipoDocumento.objects.filter(id=id, unidad=unidad).first()
             if not tipo:
                 return UpdateTipoDocumento(tipo_documento=None, success=False, message="Tipo no encontrado")
             if nombre is not None:
+                slug = _slug_de(nombre)
+                if TipoDocumento.objects.filter(slug=slug, unidad=unidad).exclude(id=id).exists():
+                    return UpdateTipoDocumento(tipo_documento=None, success=False, message="Ya existe otro tipo con ese nombre en esta unidad")
                 tipo.nombre = nombre
+                tipo.slug = slug
             if palabras_clave is not None:
                 tipo.palabras_clave = palabras_clave
             if keywords_obligatorias is not None:
@@ -227,32 +274,34 @@ class Mutation:
             if activo is not None:
                 tipo.activo = activo
             tipo.save()
-            # Cambiar las palabras cambia el resultado de clasificacion: hay que
-            # reevaluar los documentos que quedaron 'sin_clasificar' o 'dudosa'.
-            reclasificar_todos()
+            reclasificar_todos(unidad=unidad)
             return UpdateTipoDocumento(tipo_documento=tipo, success=True, message="Tipo actualizado")
         except Exception as e:
             return UpdateTipoDocumento(tipo_documento=None, success=False, message=str(e))
 
     @strawberry.mutation
-    def delete_tipo_documento(self, id: int) -> DeleteTipoDocumento:
+    def delete_tipo_documento(self, info: strawberry.types.Info, id: int) -> DeleteTipoDocumento:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            tipo = TipoDocumento.objects.filter(id=id).first()
+            unidad = get_unidad_from_info(info)
+            tipo = TipoDocumento.objects.filter(id=id, unidad=unidad).first()
             if not tipo:
                 return DeleteTipoDocumento(success=False, message="Tipo no encontrado")
-            Documento.objects.filter(tipo_documento=tipo).update(tipo_documento=None, estado='pendiente')
+            Documento.objects.filter(tipo_documento=tipo, unidad=unidad).update(tipo_documento=None, estado='pendiente')
             tipo.delete()
             return DeleteTipoDocumento(success=True, message="Tipo eliminado")
         except Exception as e:
             return DeleteTipoDocumento(success=False, message=str(e))
 
     @strawberry.mutation
-    def asignar_documento(self, documento_id: int, tipo_documento_id: int) -> AsignarDocumento:
+    def asignar_documento(self, info: strawberry.types.Info, documento_id: int, tipo_documento_id: int) -> AsignarDocumento:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            doc = Documento.objects.filter(id=documento_id).first()
+            unidad = get_unidad_from_info(info)
+            doc = Documento.objects.filter(id=documento_id, unidad=unidad).first()
             if not doc:
                 return AsignarDocumento(documento=None, success=False, message="Documento no encontrado")
-            tipo = TipoDocumento.objects.filter(id=tipo_documento_id).first()
+            tipo = TipoDocumento.objects.filter(id=tipo_documento_id, unidad=unidad).first()
             if not tipo:
                 return AsignarDocumento(documento=None, success=False, message="Tipo de documento no encontrado")
             doc.tipo_documento = tipo
@@ -263,9 +312,11 @@ class Mutation:
             return AsignarDocumento(documento=None, success=False, message=str(e))
 
     @strawberry.mutation
-    def clasificar_documento(self, documento_id: int) -> ClasificarDocumento:
+    def clasificar_documento(self, info: strawberry.types.Info, documento_id: int) -> ClasificarDocumento:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            doc = Documento.objects.filter(id=documento_id).first()
+            unidad = get_unidad_from_info(info)
+            doc = Documento.objects.filter(id=documento_id, unidad=unidad).first()
             if not doc:
                 return ClasificarDocumento(documento=None, success=False, message="Documento no encontrado")
 
@@ -283,23 +334,17 @@ class Mutation:
 
     @strawberry.mutation
     def reclasificar_documento(
-        self, info: strawberry.Info, documento_id: int, tipo_documento_id: int
+        self, info: strawberry.types.Info, documento_id: int, tipo_documento_id: int
     ) -> ReclasificarDocumento:
-        """Correccion humana de una pagina mal clasificada.
-
-        A diferencia de `asignarDocumento`, aqui el estado pasa a 'verificado':
-        asignar es un pase automatico que el clasificador puede volver a
-        deshacer en la proxima reclasificacion; verificar es la decision final
-        de una persona, y por eso limpia el score local (que ya no describe el
-        resultado) y deja el score anterior asentado en el log.
-        """
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            doc = Documento.objects.filter(id=documento_id).first()
+            unidad = get_unidad_from_info(info)
+            doc = Documento.objects.filter(id=documento_id, unidad=unidad).first()
             if not doc:
                 return ReclasificarDocumento(
                     documento=None, success=False, message="Documento no encontrado")
 
-            tipo = TipoDocumento.objects.filter(id=tipo_documento_id).first()
+            tipo = TipoDocumento.objects.filter(id=tipo_documento_id, unidad=unidad).first()
             if not tipo:
                 return ReclasificarDocumento(
                     documento=None, success=False, message="Tipo de documento no encontrado")
@@ -311,8 +356,6 @@ class Mutation:
             doc.tipo_documento = tipo
             doc.estado = 'verificado'
             doc.score = None
-            # Keywords y phash tambien son del intento fallido: dejarlos
-            # mentiria sobre por que el documento esta en la cola.
             doc.keywords_matcheadas = []
             doc.duplicado_de = None
             doc.save()
@@ -325,9 +368,11 @@ class Mutation:
                 documento=None, success=False, message=str(e))
 
     @strawberry.mutation
-    def crear_y_asignar_tipo(self, documento_id: int, nombre: str, palabras_clave: str) -> CrearYAsignarTipo:
+    def crear_y_asignar_tipo(self, info: strawberry.types.Info, documento_id: int, nombre: str, palabras_clave: str) -> CrearYAsignarTipo:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            doc = Documento.objects.filter(id=documento_id).first()
+            unidad = get_unidad_from_info(info)
+            doc = Documento.objects.filter(id=documento_id, unidad=unidad).first()
             if not doc:
                 return CrearYAsignarTipo(
                     tipo_documento=None, documento=None, success=False, message="Documento no encontrado"
@@ -335,15 +380,15 @@ class Mutation:
 
             slug = _slug_de(nombre)
 
-            if TipoDocumento.objects.filter(slug=slug).exists():
-                tipo = TipoDocumento.objects.filter(slug=slug).first()
-            else:
+            tipo = TipoDocumento.objects.filter(slug=slug, unidad=unidad).first()
+            if not tipo:
                 tipo = TipoDocumento.objects.create(
+                    unidad=unidad,
                     nombre=nombre,
                     slug=slug,
                     palabras_clave=palabras_clave,
                 )
-                reclasificar_todos()
+                reclasificar_todos(unidad=unidad)
 
             doc.tipo_documento = tipo
             doc.estado = 'clasificado'
@@ -359,9 +404,11 @@ class Mutation:
             return CrearYAsignarTipo(tipo_documento=None, documento=None, success=False, message=str(e))
 
     @strawberry.mutation
-    def aceptar_sugerencia(self, id: int, peso: int = 1) -> AceptarSugerencia:
+    def aceptar_sugerencia(self, info: strawberry.types.Info, id: int, peso: int = 1) -> AceptarSugerencia:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            sug = SugerenciaKeyword.objects.filter(id=id).first()
+            unidad = get_unidad_from_info(info)
+            sug = SugerenciaKeyword.objects.filter(id=id, tipo_documento__unidad=unidad).first()
             if not sug:
                 return AceptarSugerencia(
                     sugerencia=None, tipo_documento=None, success=False, message="Sugerencia no encontrada"
@@ -390,9 +437,11 @@ class Mutation:
             return AceptarSugerencia(sugerencia=None, tipo_documento=None, success=False, message=str(e))
 
     @strawberry.mutation
-    def descartar_sugerencia(self, id: int) -> DescartarSugerencia:
+    def descartar_sugerencia(self, info: strawberry.types.Info, id: int) -> DescartarSugerencia:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            sug = SugerenciaKeyword.objects.filter(id=id).first()
+            unidad = get_unidad_from_info(info)
+            sug = SugerenciaKeyword.objects.filter(id=id, tipo_documento__unidad=unidad).first()
             if not sug:
                 return DescartarSugerencia(sugerencia=None, success=False, message="Sugerencia no encontrada")
             sug.aceptada = False
@@ -403,11 +452,13 @@ class Mutation:
 
     @strawberry.mutation
     def generar_sugerencias_keywords(
-        self, min_docs: int = 5, top: int = 5, limpiar: bool = False
+        self, info: strawberry.types.Info, min_docs: int = 5, top: int = 5, limpiar: bool = False
     ) -> GenerarSugerenciasKeywords:
+        from apps.core.tenancy import get_unidad_from_info
         try:
+            unidad = get_unidad_from_info(info)
             from .services import generar_sugerencias_keywords
-            res = generar_sugerencias_keywords(min_docs=min_docs, top=top, limpiar=limpiar)
+            res = generar_sugerencias_keywords(min_docs=min_docs, top=top, limpiar=limpiar, unidad=unidad)
             return GenerarSugerenciasKeywords(
                 success=res['success'],
                 message=res['message'],
@@ -421,3 +472,253 @@ class Mutation:
                 total_generadas=0,
                 total_verificados=0,
             )
+
+    @strawberry.mutation
+    def crear_documento_con_paginas(
+        self,
+        info: strawberry.types.Info,
+        lote_id: strawberry.ID,
+        pagina_ids: list[strawberry.ID],
+        tipo_documento_id: Optional[int] = None,
+        nombre_final: Optional[str] = None,
+        es_doble_cara: Optional[bool] = None,
+    ) -> CrearDocumentoConPaginas:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            lote = Lote.objects.filter(id=lote_id, unidad=unidad).first()
+            if not lote:
+                return CrearDocumentoConPaginas(
+                    documento=None, advertencia=None, success=False, message="Lote no encontrado o acceso no autorizado"
+                )
+
+            clean_ids = [int(str(pid)) for pid in pagina_ids]
+            paginas = list(Pagina.objects.filter(id__in=clean_ids, unidad=unidad).order_by('nro_pagina_en_pdf'))
+            if len(paginas) != len(clean_ids):
+                return CrearDocumentoConPaginas(
+                    documento=None, advertencia=None, success=False, message="Una o más páginas no existen o pertenecen a otra unidad"
+                )
+
+            tipo_doc = None
+            if tipo_documento_id:
+                tipo_doc = TipoDocumento.objects.filter(id=tipo_documento_id, unidad=unidad).first()
+
+            es_doble = bool(es_doble_cara) if es_doble_cara is not None else (len(paginas) == 2)
+            advertencia = None
+            if len(paginas) > 2:
+                advertencia = f"El documento tiene más de 2 páginas por defecto ({len(paginas)} páginas asignadas)"
+
+            nombre = (nombre_final or '').strip()
+            if not nombre and tipo_doc:
+                nombre = tipo_doc.nombre
+            elif not nombre:
+                nombre = lote.nombre_archivo_original
+
+            doc = Documento.objects.create(
+                unidad=unidad,
+                lote=lote,
+                tipo_documento=tipo_doc,
+                es_doble_cara=es_doble,
+                nombre_final=nombre,
+                estado='pendiente',
+            )
+            doc.paginas.set(paginas)
+
+            for p in paginas:
+                p.estado = 'confirmada'
+                p.save(update_fields=['estado'])
+
+            return CrearDocumentoConPaginas(
+                documento=doc,
+                advertencia=advertencia,
+                success=True,
+                message="Documento creado exitosamente con sus páginas",
+            )
+        except Exception as e:
+            return CrearDocumentoConPaginas(
+                documento=None, advertencia=None, success=False, message=str(e)
+            )
+
+    @strawberry.mutation
+    def agregar_pagina_a_documento(
+        self,
+        info: strawberry.types.Info,
+        documento_id: strawberry.ID,
+        pagina_id: strawberry.ID,
+    ) -> AgregarPaginaADocumento:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            doc = Documento.objects.filter(id=documento_id, unidad=unidad).first()
+            if not doc:
+                return AgregarPaginaADocumento(
+                    documento=None, advertencia=None, success=False, message="Documento no encontrado o no pertenece a la unidad"
+                )
+
+            pagina = Pagina.objects.filter(id=pagina_id, unidad=unidad).first()
+            if not pagina:
+                return AgregarPaginaADocumento(
+                    documento=None, advertencia=None, success=False, message="Página no encontrada o no pertenece a la unidad"
+                )
+
+            if doc.paginas.filter(id=pagina.id).exists():
+                return AgregarPaginaADocumento(
+                    documento=doc, advertencia=None, success=False, message="La página ya está vinculada a este documento"
+                )
+
+            doc.paginas.add(pagina)
+            total = doc.paginas.count()
+            doc.es_doble_cara = (total >= 2)
+            doc.save(update_fields=['es_doble_cara'])
+
+            pagina.estado = 'confirmada'
+            pagina.save(update_fields=['estado'])
+
+            advertencia = None
+            if total > 2:
+                advertencia = f"El documento tiene más de 2 páginas por defecto ({total} páginas asignadas)"
+
+            return AgregarPaginaADocumento(
+                documento=doc,
+                advertencia=advertencia,
+                success=True,
+                message="Página agregada al documento exitosamente",
+            )
+        except Exception as e:
+            return AgregarPaginaADocumento(
+                documento=None, advertencia=None, success=False, message=str(e)
+            )
+
+    @strawberry.mutation
+    def quitar_pagina_de_documento(
+        self,
+        info: strawberry.types.Info,
+        documento_id: strawberry.ID,
+        pagina_id: strawberry.ID,
+    ) -> QuitarPaginaDeDocumento:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            doc = Documento.objects.filter(id=documento_id, unidad=unidad).first()
+            if not doc:
+                return QuitarPaginaDeDocumento(
+                    documento=None, success=False, message="Documento no encontrado o no pertenece a la unidad"
+                )
+
+            pagina = Pagina.objects.filter(id=pagina_id, unidad=unidad).first()
+            if not pagina:
+                return QuitarPaginaDeDocumento(
+                    documento=None, success=False, message="Página no encontrada o no pertenece a la unidad"
+                )
+
+            if not doc.paginas.filter(id=pagina.id).exists():
+                return QuitarPaginaDeDocumento(
+                    documento=doc, success=False, message="La página no pertenece a este documento"
+                )
+
+            doc.paginas.remove(pagina)
+            total = doc.paginas.count()
+            doc.es_doble_cara = (total == 2)
+            doc.save(update_fields=['es_doble_cara'])
+
+            pagina.estado = 'pendiente'
+            pagina.save(update_fields=['estado'])
+
+            return QuitarPaginaDeDocumento(
+                documento=doc,
+                success=True,
+                message="Página removida del documento exitosamente",
+            )
+        except Exception as e:
+            return QuitarPaginaDeDocumento(
+                documento=None, success=False, message=str(e)
+            )
+
+    @strawberry.mutation
+    def confirmar_agrupamiento(
+        self,
+        info: strawberry.types.Info,
+        lote_id: strawberry.ID,
+        asignaciones: list[AsignacionGrupoInput],
+    ) -> LoteType:
+        from django.db import transaction
+        from apps.core.tenancy import get_unidad_from_info
+
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            raise PermissionError("Usuario no autenticado o unidad no válida")
+
+        lote = Lote.objects.filter(id=int(str(lote_id)), unidad=unidad).first()
+        if not lote:
+            raise ValueError(f"Lote {lote_id} no encontrado en la unidad actual")
+
+        with transaction.atomic():
+            for asig in asignaciones:
+                grupo = Grupo.objects.filter(id=int(str(asig.grupo_id)), lote=lote, unidad=unidad).first()
+                if not grupo:
+                    continue
+
+                tipo = None
+                if asig.tipo_documento_id:
+                    tipo = TipoDocumento.objects.filter(id=asig.tipo_documento_id, unidad=unidad).first()
+                    if tipo and not tipo.firma_consolidada and grupo.firma_consolidada:
+                        tipo.firma_consolidada = grupo.firma_consolidada
+                        tipo.save(update_fields=['firma_consolidada'])
+                elif asig.nombre_nuevo_tipo and asig.nombre_nuevo_tipo.strip():
+                    nombre_tipo = asig.nombre_nuevo_tipo.strip()
+                    slug_tipo = _slug_de(nombre_tipo)
+                    tipo = TipoDocumento.objects.filter(slug=slug_tipo, unidad=unidad).first()
+                    if not tipo:
+                        from .agrupador import _obtener_palabras
+                        palabras = _obtener_palabras(grupo.firma_consolidada)
+                        palabras_str = ', '.join(palabras[:10]) if palabras else nombre_tipo.lower()
+                        tipo = TipoDocumento.objects.create(
+                            unidad=unidad,
+                            nombre=nombre_tipo,
+                            slug=slug_tipo,
+                            palabras_clave=palabras_str,
+                            firma_consolidada=grupo.firma_consolidada or {},
+                            color="#4F46E5",
+                        )
+                        pags_ejemplos = list(grupo.paginas.all()[:20])
+                        if pags_ejemplos:
+                            tipo.ejemplos_paginas.set(pags_ejemplos)
+
+                pags_grupo = list(grupo.paginas.all().order_by('nro_pagina_en_pdf'))
+                nombre_final_doc = tipo.nombre if tipo else (lote.nombre_archivo_original or f"Documento Grupo {grupo.id}")
+                es_doble = bool(asig.es_doble_cara) if asig.es_doble_cara is not None else (len(pags_grupo) == 2)
+
+                if es_doble and len(pags_grupo) == 2:
+                    doc = Documento.objects.create(
+                        unidad=unidad,
+                        lote=lote,
+                        tipo_documento=tipo,
+                        es_doble_cara=True,
+                        nombre_final=nombre_final_doc,
+                        estado='confirmado',
+                    )
+                    doc.paginas.set(pags_grupo)
+                elif len(pags_grupo) > 0:
+                    doc = Documento.objects.create(
+                        unidad=unidad,
+                        lote=lote,
+                        tipo_documento=tipo,
+                        es_doble_cara=es_doble,
+                        nombre_final=nombre_final_doc,
+                        estado='confirmado',
+                    )
+                    doc.paginas.set(pags_grupo)
+
+                for p in pags_grupo:
+                    p.estado = 'confirmada'
+                    p.save(update_fields=['estado'])
+
+                grupo.estado = 'confirmado'
+                if tipo:
+                    grupo.tipo_documento_sugerido = tipo
+                grupo.save(update_fields=['estado', 'tipo_documento_sugerido'])
+
+            lote.estado = 'confirmado'
+            lote.save(update_fields=['estado'])
+
+        return lote

@@ -22,3 +22,6 @@ imagehash==4.3.1
 numpy==2.4.6
 scipy==1.17.1
 PyWavelets==1.9.0
+# Autenticacion JWT de admincentral (Fase 1, apps/core/middleware.py)
+PyJWT==2.9.0
+cryptography>=43.0.0

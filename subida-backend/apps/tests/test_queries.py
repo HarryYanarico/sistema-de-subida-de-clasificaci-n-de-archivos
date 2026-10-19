@@ -83,6 +83,13 @@ class QueryPersonasTests(GraphQLTestCase):
         self.assertIsNone(self.consulta('persona', 'id', id=999999))
 
     def test_ordenamiento_por_created_at_y_whitelist(self):
+        import datetime
+        from django.utils import timezone
+        from apps.personas.models import Persona
+
+        Persona.objects.filter(codigo='310000001').update(created_at=timezone.now() - datetime.timedelta(seconds=10))
+        Persona.objects.filter(codigo='310000002').update(created_at=timezone.now())
+
         d_asc = self.consulta(
             'personas', 'items { codigo }',
             search='310000', orderBy='created_at',

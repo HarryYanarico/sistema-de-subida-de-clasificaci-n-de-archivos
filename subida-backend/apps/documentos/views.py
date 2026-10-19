@@ -35,7 +35,11 @@ class UploadPDFView(View):
             if not persona_id:
                 return JsonResponse({'success': False, 'message': 'persona_id es requerido'}, status=400)
 
-            persona = Persona.objects.filter(id=persona_id).first()
+            unidad = getattr(request, 'unidad', None)
+            qs = Persona.objects.filter(id=persona_id)
+            if unidad is not None:
+                qs = qs.filter(unidad=unidad)
+            persona = qs.first()
             if not persona:
                 return JsonResponse({'success': False, 'message': 'Persona no encontrada'}, status=404)
 
@@ -45,19 +49,21 @@ class UploadPDFView(View):
 
             processor = PDFProcessor()
             total_pages = 0
-            usuario = _get_user_from_request(request)
+            usuario = request.user if getattr(request, 'user', None) and request.user.is_authenticated else _get_user_from_request(request)
+            doc_unidad = unidad or getattr(persona, 'unidad', None)
 
             for pdf_file in files:
                 file_content = pdf_file.read()
                 results = processor.process_pdf(
                     persona.codigo, pdf_file.name, file_content,
-                    persona=persona,
+                    persona=persona, unidad=doc_unidad,
                 )
 
                 for result in results:
                     phash = result.get('phash')
-                    original_id = buscar_duplicado(phash) if phash else None
+                    original_id = buscar_duplicado(phash, unidad=doc_unidad) if phash else None
                     Documento.objects.create(
+                        unidad=doc_unidad,
                         persona=persona,
                         tipo_documento=result['tipo_documento'],
                         archivo_original=result['archivo_original'],
@@ -96,11 +102,12 @@ class UploadBatchPDFView(View):
             errores = []
             detalles = []
 
-            usuario = _get_user_from_request(request)
+            unidad = getattr(request, 'unidad', None)
+            usuario = request.user if getattr(request, 'user', None) and request.user.is_authenticated else _get_user_from_request(request)
 
             for pdf_file in files:
                 ok, resultado = procesar_ingesta(
-                    pdf_file.name, pdf_file.read(), usuario, processor=processor
+                    pdf_file.name, pdf_file.read(), usuario, unidad=unidad, processor=processor
                 )
 
                 if ok:
@@ -128,7 +135,11 @@ class UploadBatchPDFView(View):
 
 class DocumentoFileView(View):
     def get(self, request, doc_id):
-        doc = Documento.objects.filter(id=doc_id).first()
+        unidad = getattr(request, 'unidad', None)
+        qs = Documento.objects.filter(id=doc_id)
+        if unidad is not None:
+            qs = qs.filter(unidad=unidad)
+        doc = qs.first()
         if not doc:
             raise Http404
 
@@ -157,7 +168,11 @@ class DocumentoFileView(View):
 
 class DocumentoOriginalView(View):
     def get(self, request, doc_id):
-        doc = Documento.objects.filter(id=doc_id).first()
+        unidad = getattr(request, 'unidad', None)
+        qs = Documento.objects.filter(id=doc_id)
+        if unidad is not None:
+            qs = qs.filter(unidad=unidad)
+        doc = qs.first()
         if not doc:
             raise Http404
 
@@ -173,7 +188,11 @@ class DocumentoOriginalView(View):
 
 class DocumentoThumbnailView(View):
     def get(self, request, doc_id):
-        doc = Documento.objects.filter(id=doc_id).first()
+        unidad = getattr(request, 'unidad', None)
+        qs = Documento.objects.filter(id=doc_id)
+        if unidad is not None:
+            qs = qs.filter(unidad=unidad)
+        doc = qs.first()
         if not doc:
             raise Http404
 

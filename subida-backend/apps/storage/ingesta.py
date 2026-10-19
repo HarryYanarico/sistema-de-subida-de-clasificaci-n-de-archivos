@@ -51,9 +51,9 @@ def extract_digits_from_filename(filename: str) -> str:
     return candidatos[0] if candidatos else ''
 
 
-def resolver_persona(nombre: str) -> tuple:
+def resolver_persona(nombre: str, unidad=None) -> tuple:
     """
-    Resuelve la persona correspondiente al archivo.
+    Resuelve la persona correspondiente al archivo filtrando por su unidad.
     Principio: 'El regex propone, la tabla dispone'.
     Si hay múltiples números (ej: código y año 2024), valida contra la tabla Persona.
     """
@@ -64,9 +64,12 @@ def resolver_persona(nombre: str) -> tuple:
     persona = None
     codigo_seleccionado = candidatos[0]
 
-    # Buscar cuál de los candidatos existe realmente en la base de datos
+    # Buscar cuál de los candidatos existe realmente en la base de datos para la unidad
     for cand in candidatos:
-        p = Persona.objects.filter(codigo=cand).first()
+        qs = Persona.objects.filter(codigo=cand)
+        if unidad is not None:
+            qs = qs.filter(unidad=unidad)
+        p = qs.first()
         if p:
             persona = p
             codigo_seleccionado = cand
@@ -78,8 +81,11 @@ def resolver_persona(nombre: str) -> tuple:
     return persona, codigo_seleccionado, None
 
 
-def procesar_ingesta(nombre, contenido, usuario, processor=None):
-    persona, codigo, error_validacion = resolver_persona(nombre)
+def procesar_ingesta(nombre, contenido, usuario, unidad=None, processor=None):
+    if unidad is None and usuario is not None:
+        unidad = getattr(usuario, 'unidad', None)
+
+    persona, codigo, error_validacion = resolver_persona(nombre, unidad=unidad)
 
     if error_validacion:
         return False, {'error': error_validacion}
@@ -90,23 +96,25 @@ def procesar_ingesta(nombre, contenido, usuario, processor=None):
                      f'máximo {TAMANO_MAXIMO_PDF // (1024 * 1024)} MB)'
         }
 
+    doc_unidad = unidad or getattr(persona, 'unidad', None)
+
     if processor is None:
         processor = PDFProcessor()
 
     try:
         results = processor.process_pdf(
-            persona.codigo, nombre, contenido, persona=persona
+            persona.codigo, nombre, contenido, persona=persona, unidad=doc_unidad
         )
 
         paginas = 0
         duplicados = 0
         for result in results:
             phash = result.get('phash')
-            # Se busca antes de crear: el duplicado es el que ya existe, asi
-            # que una segunda copia del mismo PDF no se marca a si misma.
-            original_id = buscar_duplicado(phash) if phash else None
+            # Se busca antes de crear: el duplicado es el que ya existe en la misma unidad
+            original_id = buscar_duplicado(phash, unidad=doc_unidad) if phash else None
 
             Documento.objects.create(
+                unidad=doc_unidad,
                 persona=persona,
                 tipo_documento=result['tipo_documento'],
                 archivo_original=result['archivo_original'],

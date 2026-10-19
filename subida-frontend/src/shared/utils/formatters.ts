@@ -60,6 +60,8 @@ export function obtenerEtiquetaEstado(estado: string): string {
       return 'Sin clasificar'
     case DOCUMENTO_ESTADOS.DUPLICADO:
       return 'Duplicado'
+    case DOCUMENTO_ESTADOS.DUPLICADA:
+      return 'Duplicada'
     case DOCUMENTO_ESTADOS.PENDIENTE:
       return 'Pendiente'
     default:
@@ -81,7 +83,8 @@ export function obtenerVarianteEstado(
     case DOCUMENTO_ESTADOS.DUDOSA:
       return 'warning'
     case DOCUMENTO_ESTADOS.DUPLICADO:
-      return 'secondary'
+    case DOCUMENTO_ESTADOS.DUPLICADA:
+      return 'destructive'
     case DOCUMENTO_ESTADOS.SIN_CLASIFICAR:
     case DOCUMENTO_ESTADOS.PENDIENTE:
       return 'outline'
