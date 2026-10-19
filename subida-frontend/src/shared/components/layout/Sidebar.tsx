@@ -55,10 +55,15 @@ export function Sidebar({ isOpen, onClose, items }: SidebarProps) {
           <p className="text-xs font-semibold truncate">
             {user?.first_name} {user?.last_name}
           </p>
-          <div className="flex items-center gap-1.5 mt-0.5">
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
             <Badge variant="outline" className="text-[10px] h-4 px-1 uppercase font-mono">
               {user?.role || 'operador'}
             </Badge>
+            {user?.unidad?.codigo && (
+              <Badge variant="secondary" className="text-[10px] h-4 px-1 font-mono">
+                {user.unidad.codigo}
+              </Badge>
+            )}
             <span className="text-[11px] text-muted-foreground truncate font-mono">
               @{user?.username}
             </span>

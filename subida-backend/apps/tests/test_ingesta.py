@@ -164,5 +164,5 @@ class _Processor:
     def __init__(self, paginas):
         self._paginas = paginas
 
-    def process_pdf(self, persona_codigo, filename, contenido, persona=None):
+    def process_pdf(self, persona_codigo, filename, contenido, persona=None, **kwargs):
         return list(self._paginas)

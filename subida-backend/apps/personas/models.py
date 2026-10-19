@@ -2,7 +2,8 @@ from django.db import models
 
 
 class Persona(models.Model):
-    codigo = models.CharField(max_length=20, unique=True, verbose_name='Código')
+    unidad = models.ForeignKey('core.Unidad', on_delete=models.CASCADE, related_name='personas', verbose_name='Unidad')
+    codigo = models.CharField(max_length=20, verbose_name='Código')
     nombres = models.CharField(max_length=255)
     apellidos = models.CharField(max_length=255)
     ci = models.CharField(max_length=20, blank=True, verbose_name='Carnet de Identidad')
@@ -14,6 +15,7 @@ class Persona(models.Model):
     class Meta:
         db_table = 'personas'
         ordering = ['codigo']
+        unique_together = [('codigo', 'unidad')]
         verbose_name = 'persona'
         verbose_name_plural = 'personas'
 
@@ -23,3 +25,11 @@ class Persona(models.Model):
     @property
     def nombre_completo(self):
         return f"{self.nombres} {self.apellidos}"
+
+    def save(self, *args, **kwargs):
+        if not self.unidad_id:
+            from apps.core.models import Unidad
+            legacy, _ = Unidad.objects.get_or_create(codigo="LEGACY", defaults={"nombre": "Unidad Legacy Transitoria"})
+            self.unidad = legacy
+        super().save(*args, **kwargs)
+

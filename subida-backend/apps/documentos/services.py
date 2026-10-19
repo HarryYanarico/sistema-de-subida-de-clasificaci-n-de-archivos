@@ -13,17 +13,23 @@ STOPWORDS = {
 }
 
 
-def generar_sugerencias_keywords(min_docs: int = 5, top: int = 5, limpiar: bool = False) -> dict:
+def generar_sugerencias_keywords(min_docs: int = 5, top: int = 5, limpiar: bool = False, unidad=None) -> dict:
     """Analiza documentos verificados por humanos para sugerir de forma estadística
-    nuevas palabras clave por TipoDocumento, sin IA externa.
+    nuevas palabras clave por TipoDocumento, sin IA externa, filtrando por unidad.
     """
     if limpiar:
-        SugerenciaKeyword.objects.filter(aceptada__isnull=True).delete()
+        del_qs = SugerenciaKeyword.objects.filter(aceptada__isnull=True)
+        if unidad is not None:
+            del_qs = del_qs.filter(tipo_documento__unidad=unidad)
+        del_qs.delete()
 
     qs_verificados = Documento.objects.filter(
         estado='verificado',
         tipo_documento__isnull=False,
     ).exclude(texto_extraido='').select_related('tipo_documento')
+
+    if unidad is not None:
+        qs_verificados = qs_verificados.filter(unidad=unidad)
 
     total_verificados = qs_verificados.count()
     if total_verificados == 0:

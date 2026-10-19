@@ -2,6 +2,8 @@ import { RouteDefinition } from '@shared/types/shared.types'
 import { ROUTES } from '@config/routes'
 import { SubirDocumentosPage } from '../pages/SubirDocumentosPage'
 import { DocumentosPendientesPage } from '../pages/DocumentosPendientesPage'
+import { AgruparLotePage } from '../pages/AgruparLotePage'
+import { LoteDetallePage } from '../pages/LoteDetallePage'
 
 export const documentosRoutes: RouteDefinition[] = [
   {
@@ -11,5 +13,13 @@ export const documentosRoutes: RouteDefinition[] = [
   {
     path: ROUTES.DOCUMENTOS.PENDIENTES,
     element: <DocumentosPendientesPage />,
+  },
+  {
+    path: ROUTES.LOTES.AGRUPAR(),
+    element: <AgruparLotePage />,
+  },
+  {
+    path: ROUTES.LOTES.DETALLE(),
+    element: <LoteDetallePage />,
   },
 ]

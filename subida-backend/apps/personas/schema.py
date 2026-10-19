@@ -55,14 +55,21 @@ class Query:
     @strawberry.field
     def personas(
         self,
+        info: strawberry.types.Info,
         search: Optional[str] = None,
         page: Optional[int] = 1,
         limit: Optional[int] = 10,
         order_by: Optional[str] = None,
     ) -> PersonaConnection:
+        from apps.core.tenancy import get_unidad_from_info
         page = page or 1
         limit = limit or 10
-        queryset = Persona.objects.all()
+        try:
+            unidad = get_unidad_from_info(info)
+            queryset = Persona.objects.filter(unidad=unidad)
+        except Exception:
+            queryset = Persona.objects.none()
+
         if search:
             queryset = queryset.filter(
                 Q(nombres__icontains=search)
@@ -84,5 +91,10 @@ class Query:
         )
 
     @strawberry.field
-    def persona(self, id: int) -> Optional[PersonaType]:
-        return Persona.objects.filter(id=id).first()
+    def persona(self, info: strawberry.types.Info, id: int) -> Optional[PersonaType]:
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            return Persona.objects.filter(id=id, unidad=unidad).first()
+        except Exception:
+            return None

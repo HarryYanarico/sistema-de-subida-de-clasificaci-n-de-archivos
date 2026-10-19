@@ -86,3 +86,80 @@ export const CREAR_Y_ASIGNAR_TIPO = gql`
     }
   }
 `
+
+export const CREAR_DOCUMENTO_CON_PAGINAS = gql`
+  mutation CrearDocumentoConPaginas(
+    $loteId: ID!
+    $paginaIds: [ID!]!
+    $tipoDocumentoId: Int
+    $nombreFinal: String
+    $esDobleCara: Boolean
+  ) {
+    crearDocumentoConPaginas(
+      loteId: $loteId
+      paginaIds: $paginaIds
+      tipoDocumentoId: $tipoDocumentoId
+      nombreFinal: $nombreFinal
+      esDobleCara: $esDobleCara
+    ) {
+      documento {
+        id
+        nombreFinal
+        esDobleCara
+        totalPaginas
+        estado
+        paginas {
+          id
+          nroPaginaEnPdf
+          textoOcr
+          descartable
+        }
+      }
+      advertencia
+      success
+      message
+    }
+  }
+`
+
+export const AGREGAR_PAGINA_A_DOCUMENTO = gql`
+  mutation AgregarPaginaADocumento($documentoId: ID!, $paginaId: ID!) {
+    agregarPaginaADocumento(documentoId: $documentoId, paginaId: $paginaId) {
+      documento {
+        id
+        nombreFinal
+        esDobleCara
+        totalPaginas
+        estado
+        paginas {
+          id
+          nroPaginaEnPdf
+        }
+      }
+      advertencia
+      success
+      message
+    }
+  }
+`
+
+export const QUITAR_PAGINA_DE_DOCUMENTO = gql`
+  mutation QuitarPaginaDeDocumento($documentoId: ID!, $paginaId: ID!) {
+    quitarPaginaDeDocumento(documentoId: $documentoId, paginaId: $paginaId) {
+      documento {
+        id
+        nombreFinal
+        esDobleCara
+        totalPaginas
+        estado
+        paginas {
+          id
+          nroPaginaEnPdf
+        }
+      }
+      success
+      message
+    }
+  }
+`
+

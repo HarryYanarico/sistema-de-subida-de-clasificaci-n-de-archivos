@@ -6,6 +6,10 @@ export interface TipoDocumento {
   id: number
   nombre: string
   slug: string
+  color?: string
+  firmaConsolidada?: Record<string, any>
+  firma_consolidada?: Record<string, any>
+  ejemplosPaginas?: any[]
   palabrasClave?: string
   palabras_clave?: string
   keywordsObligatorias?: string[]
@@ -14,6 +18,7 @@ export interface TipoDocumento {
   createdAt?: string
   created_at?: string
 }
+
 
 export type TipoDocumentoGraphQL = TipoDocumento
 

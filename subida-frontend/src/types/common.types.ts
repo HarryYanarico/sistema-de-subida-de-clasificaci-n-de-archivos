@@ -4,14 +4,24 @@
 
 export type Rol = 'admin' | 'operador'
 
+export interface Unidad {
+  id?: number | string
+  codigo: string
+  nombre?: string
+  activa?: boolean
+}
+
 export interface User {
-  id: number
+  id: number | string
   username: string
   email: string
   first_name: string
   last_name: string
   role: Rol
-  telefono: string
+  rolSlug?: string
+  codEmpleado?: string
+  telefono?: string
+  unidad?: Unidad | null
 }
 
 export interface PaginationParams {

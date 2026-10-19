@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     'strawberry_django',
+    'apps.core',
     'apps.graphql',
     'apps.users',
     'apps.personas',
@@ -33,7 +34,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'apps.users.middleware.BearerAuthMiddleware',
+    'apps.core.middleware.AdminCentralJWTMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -89,6 +90,13 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',')
+CORS_ALLOW_CREDENTIALS = True
+
+# Autenticacion admincentral y aislamiento multi-tenant por unidad
+ADMINCENTRAL_JWKS_URL = os.getenv('ADMINCENTRAL_JWKS_URL', '')
+ADMINCENTRAL_PUBLIC_KEY = os.getenv('ADMINCENTRAL_PUBLIC_KEY', '')
+ADMINCENTRAL_AUDIENCE = os.getenv('ADMINCENTRAL_AUDIENCE', '')
+DEV_FAKE_UNIDAD = os.getenv('DEV_FAKE_UNIDAD', '02031')
 
 # Defaults explicitos de strawberry-graphql-django. Se dejan en False a proposito:
 #   GENERATE_ENUMS_FROM_CHOICES: los `choices` de Documento.estado y User.role se

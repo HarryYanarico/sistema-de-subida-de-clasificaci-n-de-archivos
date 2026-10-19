@@ -35,6 +35,12 @@ ESPERADO = {
         'sugerenciasKeyword': [('tipoDocumentoId', 'Int!')],
         'estadisticasDigitalizacion': [],
         'documentosRecientes': [('limit', 'Int')],
+        'me': [],
+        'lotes': [('estado', 'String'), ('limit', 'Int'), ('offset', 'Int')],
+        'lote': [('id', 'ID!')],
+        'grupos': [('loteId', 'ID!')],
+        'paginas': [('grupoId', 'ID'), ('limit', 'Int'), ('loteId', 'ID'), ('offset', 'Int')],
+        'paginasDuplicadas': [('limit', 'Int'), ('offset', 'Int')],
     },
     'Mutation': {
         'loginUser': [('password', 'String!'), ('username', 'String!')],
@@ -72,6 +78,25 @@ ESPERADO = {
         'aceptarSugerencia': [('id', 'Int!'), ('peso', 'Int!')],
         'descartarSugerencia': [('id', 'Int!')],
         'generarSugerenciasKeywords': [('limpiar', 'Boolean!'), ('minDocs', 'Int!'), ('top', 'Int!')],
+        'crearDocumentoConPaginas': [
+            ('esDobleCara', 'Boolean'),
+            ('loteId', 'ID!'),
+            ('nombreFinal', 'String'),
+            ('paginaIds', '[ID!]!'),
+            ('tipoDocumentoId', 'Int'),
+        ],
+        'agregarPaginaADocumento': [
+            ('documentoId', 'ID!'),
+            ('paginaId', 'ID!'),
+        ],
+        'quitarPaginaDeDocumento': [
+            ('documentoId', 'ID!'),
+            ('paginaId', 'ID!'),
+        ],
+        'confirmarAgrupamiento': [
+            ('asignaciones', '[AsignacionGrupoInput!]!'),
+            ('loteId', 'ID!'),
+        ],
     },
 }
 
@@ -113,16 +138,32 @@ class ContratoSchemaTests(SimpleTestCase):
             ],
             'PersonaConnection': ['items', 'page', 'total', 'totalPages'],
             'TipoDocumentoType': [
-                'activo', 'createdAt', 'id', 'keywordsObligatorias', 'nombre', 'palabrasClave', 'slug',
+                'activo', 'color', 'createdAt', 'ejemplosPaginas', 'firmaConsolidada',
+                'id', 'keywordsObligatorias', 'nombre', 'palabrasClave', 'slug', 'unidad',
             ],
             'DocumentoType': [
-                'archivoOriginal', 'archivoPagina', 'createdAt', 'duplicadoDe', 'estado',
-                'historialClasificacion', 'id', 'keywordsMatcheadas', 'paginaNumero',
-                'persona', 'phash', 'score', 'textoExtraido', 'tipoDocumento',
+                'archivoOriginal', 'archivoPagina', 'createdAt', 'duplicadoDe', 'esDobleCara',
+                'estado', 'historialClasificacion', 'id', 'keywordsMatcheadas', 'lote',
+                'nombreFinal', 'paginaNumero', 'paginas', 'persona', 'phash', 'score',
+                'textoExtraido', 'tipoDocumento', 'totalPaginas', 'unidad',
+            ],
+            'LoteType': [
+                'createdAt', 'documentos', 'estado', 'grupos', 'id', 'nombreArchivoOriginal',
+                'paginas', 'parejasSugeridas', 'totalGrupos', 'totalPaginas', 'unidad',
+            ],
+            'GrupoType': [
+                'createdAt', 'estado', 'firmaConsolidada', 'id', 'loteId', 'paginas',
+                'parejasSugeridas', 'tipoDocumentoSugerido', 'totalPaginas', 'unidad',
+            ],
+            'PaginaType': [
+                'createdAt', 'descartable', 'estado', 'firmaEstructura', 'firmaPalabras',
+                'grupo', 'id', 'loteId', 'nroPaginaEnPdf', 'pdfOrigen', 'phash', 'textoOcr', 'unidad',
             ],
             'DocumentoByPersona': ['clasificados', 'documentos', 'pendientes', 'personaId',
                                    'totalPaginas'],
-            'UserType': ['email', 'firstName', 'id', 'lastName', 'role', 'telefono', 'username'],
+            'UnidadType': ['activa', 'codigo', 'createdAt', 'id', 'nombre'],
+
+            'UserType': ['codEmpleado', 'email', 'firstName', 'id', 'lastName', 'role', 'rolSlug', 'telefono', 'unidad', 'username'],
             'LoginUser': ['message', 'success', 'token', 'user'],
             'CreateUser': ['message', 'success', 'user'],
             'CreatePersona': ['message', 'persona', 'success'],
@@ -146,6 +187,10 @@ class ContratoSchemaTests(SimpleTestCase):
                 'totalDudosos', 'totalDuplicados', 'totalPendientes', 'totalSinClasificar',
                 'totalVerificados',
             ],
+            'ParejaSugeridaType': ['paginaAnversoId', 'paginaReversoId'],
+            'CrearDocumentoConPaginas': ['advertencia', 'documento', 'message', 'success'],
+            'AgregarPaginaADocumento': ['advertencia', 'documento', 'message', 'success'],
+            'QuitarPaginaDeDocumento': ['documento', 'message', 'success'],
         }
         for nombre, campos in esperados.items():
             with self.subTest(tipo=nombre):
@@ -169,6 +214,10 @@ class ContratoSchemaTests(SimpleTestCase):
                 self.assertEqual(tipo, 'String!')
 
 
+from django.test import override_settings
+
+
+@override_settings(DEBUG=True, DEV_FAKE_UNIDAD='LEGACY')
 class VistaGraphQLTests(TestCase):
     """Transporte HTTP: el frontend envia POST a /graphql/."""
 

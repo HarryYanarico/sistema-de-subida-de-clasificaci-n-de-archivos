@@ -31,6 +31,7 @@ class Mutation:
     @strawberry.mutation
     def create_persona(
         self,
+        info: strawberry.types.Info,
         codigo: str,
         nombres: str,
         apellidos: str,
@@ -38,10 +39,13 @@ class Mutation:
         email: Optional[str] = None,
         telefono: Optional[str] = None,
     ) -> CreatePersona:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            if Persona.objects.filter(codigo=codigo).exists():
-                return CreatePersona(persona=None, success=False, message="Ya existe una persona con ese código")
+            unidad = get_unidad_from_info(info)
+            if Persona.objects.filter(codigo=codigo, unidad=unidad).exists():
+                return CreatePersona(persona=None, success=False, message="Ya existe una persona con ese código en esta unidad")
             persona = Persona.objects.create(
+                unidad=unidad,
                 codigo=codigo,
                 nombres=nombres,
                 apellidos=apellidos,
@@ -56,6 +60,7 @@ class Mutation:
     @strawberry.mutation
     def update_persona(
         self,
+        info: strawberry.types.Info,
         id: int,
         codigo: Optional[str] = None,
         nombres: Optional[str] = None,
@@ -64,13 +69,15 @@ class Mutation:
         email: Optional[str] = None,
         telefono: Optional[str] = None,
     ) -> UpdatePersona:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            persona = Persona.objects.filter(id=id).first()
+            unidad = get_unidad_from_info(info)
+            persona = Persona.objects.filter(id=id, unidad=unidad).first()
             if not persona:
                 return UpdatePersona(persona=None, success=False, message="Persona no encontrada")
             if codigo is not None:
-                if Persona.objects.filter(codigo=codigo).exclude(id=id).exists():
-                    return UpdatePersona(persona=None, success=False, message="Ya existe otra persona con ese código")
+                if Persona.objects.filter(codigo=codigo, unidad=unidad).exclude(id=id).exists():
+                    return UpdatePersona(persona=None, success=False, message="Ya existe otra persona con ese código en esta unidad")
                 persona.codigo = codigo
             if nombres is not None:
                 persona.nombres = nombres
@@ -88,9 +95,11 @@ class Mutation:
             return UpdatePersona(persona=None, success=False, message=str(e))
 
     @strawberry.mutation
-    def delete_persona(self, id: int) -> DeletePersona:
+    def delete_persona(self, info: strawberry.types.Info, id: int) -> DeletePersona:
+        from apps.core.tenancy import get_unidad_from_info
         try:
-            persona = Persona.objects.filter(id=id).first()
+            unidad = get_unidad_from_info(info)
+            persona = Persona.objects.filter(id=id, unidad=unidad).first()
             if not persona:
                 return DeletePersona(success=False, message="Persona no encontrada")
             persona.delete()

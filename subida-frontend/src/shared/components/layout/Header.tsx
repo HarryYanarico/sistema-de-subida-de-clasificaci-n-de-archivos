@@ -47,8 +47,14 @@ export function Header({ onOpenSidebar }: HeaderProps) {
               <Badge variant="outline" className="text-[10px] uppercase font-mono px-1 h-4">
                 {user.role}
               </Badge>
+              {user.unidad?.codigo && (
+                <Badge variant="secondary" className="text-[10px] font-mono px-1.5 h-4">
+                  Unidad: {user.unidad.codigo}
+                </Badge>
+              )}
             </div>
           )}
+
 
           <Button
             variant="ghost"
