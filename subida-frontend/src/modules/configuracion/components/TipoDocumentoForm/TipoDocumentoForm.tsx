@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KeywordInput } from '@/components/ui/keyword-input'
-import { SugerenciasKeywordPanel } from '../SugerenciasKeywordPanel/SugerenciasKeywordPanel'
+import { SugerenciasAdminPanel } from '../SugerenciasAdminPanel/SugerenciasAdminPanel'
 import { TipoDocumentoFormProps } from './TipoDocumentoForm.types'
 
 export function TipoDocumentoForm({
@@ -39,10 +39,16 @@ export function TipoDocumentoForm({
       </div>
 
       {editingId && (
-        <SugerenciasKeywordPanel
-          tipoDocumentoId={Number(editingId)}
-          onPalabrasActualizadas={onPalabrasActualizadas}
-        />
+        <div className="space-y-4 pt-1">
+          <SugerenciasAdminPanel
+            tipoDocumentoId={Number(editingId)}
+            onPalabrasActualizadas={(nuevasPalabras) => {
+              if (onPalabrasActualizadas) {
+                onPalabrasActualizadas(nuevasPalabras)
+              }
+            }}
+          />
+        </div>
       )}
 
       <div className="flex justify-end gap-2 pt-2">

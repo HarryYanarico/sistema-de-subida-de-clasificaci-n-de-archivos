@@ -41,6 +41,8 @@ ESPERADO = {
         'grupos': [('loteId', 'ID!')],
         'paginas': [('grupoId', 'ID'), ('limit', 'Int'), ('loteId', 'ID'), ('offset', 'Int')],
         'paginasDuplicadas': [('limit', 'Int'), ('offset', 'Int')],
+        'paginasSinAgrupar': [('limit', 'Int'), ('offset', 'Int')],
+        'sugerenciasAdmin': [('tipoId', 'ID!')],
     },
     'Mutation': {
         'loginUser': [('password', 'String!'), ('username', 'String!')],
@@ -96,6 +98,22 @@ ESPERADO = {
         'confirmarAgrupamiento': [
             ('asignaciones', '[AsignacionGrupoInput!]!'),
             ('loteId', 'ID!'),
+        ],
+        'asignarPaginaATipo': [
+            ('paginaId', 'ID!'),
+            ('tipoDocumentoId', 'ID!'),
+        ],
+        'crearTipoYAsignar': [
+            ('nombre', 'String!'),
+            ('paginaId', 'ID!'),
+        ],
+        'descartarPagina': [
+            ('paginaId', 'ID!'),
+        ],
+        'guardarPalabrasAdmin': [
+            ('palabrasObligatorias', '[String!]!'),
+            ('palabrasSeleccionadas', '[String!]!'),
+            ('tipoId', 'ID!'),
         ],
     },
 }
@@ -157,7 +175,7 @@ class ContratoSchemaTests(SimpleTestCase):
             ],
             'PaginaType': [
                 'createdAt', 'descartable', 'estado', 'firmaEstructura', 'firmaPalabras',
-                'grupo', 'id', 'loteId', 'nroPaginaEnPdf', 'pdfOrigen', 'phash', 'textoOcr', 'unidad',
+                'grupo', 'id', 'loteId', 'loteNombre', 'nroPaginaEnPdf', 'pdfOrigen', 'phash', 'textoOcr', 'unidad',
             ],
             'DocumentoByPersona': ['clasificados', 'documentos', 'pendientes', 'personaId',
                                    'totalPaginas'],

@@ -40,3 +40,29 @@ export const GET_SUGERENCIAS_KEYWORD = gql`
     }
   }
 `
+
+export const GET_SUGERENCIAS_ADMIN = gql`
+  query GetSugerenciasAdmin($tipoId: ID!) {
+    sugerenciasAdmin(tipoId: $tipoId) {
+      suficientesEjemplos
+      totalEjemplos
+      mensaje
+      siempre {
+        palabra
+        esObligatoria
+        seleccionada
+      }
+      suelen {
+        palabra
+        esObligatoria
+        seleccionada
+      }
+      yaNoAparecen {
+        palabra
+        esObligatoria
+        seleccionada
+      }
+    }
+  }
+`
+

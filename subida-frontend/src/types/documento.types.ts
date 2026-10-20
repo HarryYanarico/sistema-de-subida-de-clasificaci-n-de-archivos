@@ -31,6 +31,7 @@ export interface EntradaHistorial {
 export interface Pagina {
   id: number
   loteId: number | string
+  loteNombre?: string | null
   pdfOrigen: string
   nroPaginaEnPdf: number
   textoOcr: string

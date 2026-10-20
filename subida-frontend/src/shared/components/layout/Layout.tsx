@@ -11,6 +11,7 @@ import {
   HelpCircle,
   FileQuestion,
   Copy,
+  Layers,
 } from 'lucide-react'
 import { Header } from './Header'
 import { Sidebar } from './Sidebar'
@@ -39,6 +40,12 @@ const navigationItems: NavItem[] = [
     name: 'Revisión: Duplicados',
     href: ROUTES.REVISION.DUPLICADOS,
     icon: Copy,
+    roles: ['admin', 'operador'],
+  },
+  {
+    name: 'Revisión: Sin Agrupar',
+    href: ROUTES.REVISION.SIN_AGRUPAR,
+    icon: Layers,
     roles: ['admin', 'operador'],
   },
   { name: 'Tipos de Documento', href: ROUTES.CONFIGURACION.TIPOS_DOCUMENTO, icon: FileText },

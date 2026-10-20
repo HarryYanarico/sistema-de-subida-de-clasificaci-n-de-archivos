@@ -30,6 +30,7 @@ export const ROUTES = {
     DUDOSAS: '/revision/dudosas',
     SIN_CLASIFICAR: '/revision/sin-clasificar',
     DUPLICADOS: '/revision/duplicados',
+    SIN_AGRUPAR: '/revision/sin-agrupar',
   },
 
   // Módulo de Configuración y Tipos de Documento

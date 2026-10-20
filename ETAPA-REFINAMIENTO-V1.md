@@ -370,7 +370,7 @@
 
 ## FASE 7 — Cola residual: páginas que no se pudieron agrupar
 
-**Estado:** `INCOMPLETO`
+**Estado:** `COMPLETADO`
 
 **Prioridad:** 🟡 Media
 
@@ -391,11 +391,11 @@
 
 ### Criterios de aceptación
 
-- [ ] Las páginas sin agrupar aparecen en la cola.
-- [ ] Las 3 acciones funcionan y persisten.
-- [ ] Las páginas descartadas no vuelven a aparecer.
-- [ ] Las rutas están protegidas por rol.
-- [ ] Un usuario no puede actuar sobre páginas de otra unidad (404).
+- [x] Las páginas sin agrupar aparecen en la cola.
+- [x] Las 3 acciones funcionan y persisten.
+- [x] Las páginas descartadas no vuelven a aparecer.
+- [x] Las rutas están protegidas por rol.
+- [x] Un usuario no puede actuar sobre páginas de otra unidad (404).
 
 ### Notas
 
@@ -436,7 +436,7 @@
 
 ## FASE 9 — Aprendizaje incremental de firmas
 
-**Estado:** `INCOMPLETO`
+**Estado:** `COMPLETADO`
 
 **Prioridad:** 🟢 Baja
 
@@ -453,9 +453,9 @@
 
 ### Criterios de aceptación
 
-- [ ] Al confirmar un documento, la firma del tipo se actualiza.
-- [ ] Con 5 documentos confirmados del mismo tipo, la firma consolidada es coherente.
-- [ ] El cálculo no bloquea la UI (< 200ms para lotes de < 100 páginas).
+- [x] Al confirmar un documento, la firma del tipo se actualiza.
+- [x] Con 5 documentos confirmados del mismo tipo, la firma consolidada es coherente.
+- [x] El cálculo no bloquea la UI (< 200ms para lotes de < 100 páginas).
 
 ### Notas
 
@@ -466,7 +466,7 @@
 
 ## FASE 10 — Sugerencias al admin (sin jerga técnica)
 
-**Estado:** `INCOMPLETO`
+**Estado:** `COMPLETADO`
 
 **Prioridad:** 🟢 Baja
 
@@ -485,11 +485,11 @@
 
 ### Criterios de aceptación
 
-- [ ] La pantalla muestra las 3 listas (siempre / suelen / ya no aparecen).
-- [ ] El admin puede marcar/desmarcar palabras y candados.
-- [ ] Al guardar, `palabras_clave` y `keywords_obligatorias` se actualizan correctamente.
-- [ ] El admin no ve ningún número de peso ni ratio.
-- [ ] Solo se muestran tipos de la unidad del admin.
+- [x] La pantalla muestra las 3 listas (siempre / suelen / ya no aparecen).
+- [x] El admin puede marcar/desmarcar palabras y candados.
+- [x] Al guardar, `palabras_clave` y `keywords_obligatorias` se actualizan correctamente.
+- [x] El admin no ve ningún número de peso ni ratio.
+- [x] Solo se muestran tipos de la unidad del admin.
 
 ### Notas
 
@@ -506,13 +506,12 @@
 | 1 | Autenticación vía JWT de admincentral + aislamiento por unidad | 🔴 Crítica | `COMPLETADO` |
 | 2 | Modelo de datos: Lote, Página, Documento, Firma y Grupos | 🔴 Crítica | `COMPLETADO` |
 | 3 | Motor de agrupamiento por firmas (sin IA) | 🟠 Alta | `COMPLETADO` |
-
-| 4 | Detección de documentos de doble cara | 🟠 Alta | `INCOMPLETO` |
-| 5 | Pantalla de agrupamiento (frontend) | 🟠 Alta | `INCOMPLETO` |
-| 6 | Deduplicación por pHash | 🟡 Media | `INCOMPLETO` |
-| 7 | Cola residual: páginas sin agrupar | 🟡 Media | `INCOMPLETO` |
+| 4 | Detección de documentos de doble cara | 🟠 Alta | `COMPLETADO` |
+| 5 | Pantalla de agrupamiento (frontend) | 🟠 Alta | `COMPLETADO` |
+| 6 | Deduplicación por pHash | 🟡 Media | `COMPLETADO` |
+| 7 | Cola residual: páginas sin agrupar | 🟡 Media | `COMPLETADO` |
 | 8 | Eliminación de Google Drive y del clasificador IA | 🟠 Alta | `COMPLETADO` |
-| 9 | Aprendizaje incremental de firmas | 🟢 Baja | `INCOMPLETO` |
-| 10 | Sugerencias al admin (sin jerga técnica) | 🟢 Baja | `INCOMPLETO` |
+| 9 | Aprendizaje incremental de firmas | 🟢 Baja | `COMPLETADO` |
+| 10 | Sugerencias al admin (sin jerga técnica) | 🟢 Baja | `COMPLETADO` |
 
 **Orden de ejecución recomendado:** 8 (ya está) → 1 (ya está) → 2 → 3 → 4 → 5 → 9 → 6 → 7 → 10

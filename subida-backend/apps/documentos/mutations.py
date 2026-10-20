@@ -5,7 +5,7 @@ from typing import Optional
 import strawberry
 
 from .models import TipoDocumento, Documento, SugerenciaKeyword, Lote, Pagina, Grupo
-from .schema import TipoDocumentoType, DocumentoType, SugerenciaKeywordType, LoteType
+from .schema import TipoDocumentoType, DocumentoType, SugerenciaKeywordType, LoteType, PaginaType
 
 
 def clasificar_documento(doc):
@@ -713,6 +713,10 @@ class Mutation:
                     p.estado = 'confirmada'
                     p.save(update_fields=['estado'])
 
+                if tipo and pags_grupo:
+                    from .agrupador import actualizar_firma_tipo_documento
+                    actualizar_firma_tipo_documento(tipo, pags_grupo)
+
                 grupo.estado = 'confirmado'
                 if tipo:
                     grupo.tipo_documento_sugerido = tipo
@@ -722,3 +726,166 @@ class Mutation:
             lote.save(update_fields=['estado'])
 
         return lote
+
+    @strawberry.mutation
+    def asignar_pagina_a_tipo(
+        self,
+        info: strawberry.types.Info,
+        pagina_id: strawberry.ID,
+        tipo_documento_id: strawberry.ID,
+    ) -> PaginaType:
+        from django.db import transaction
+        from apps.core.tenancy import get_unidad_from_info
+
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            raise PermissionError("Usuario no autenticado o unidad no válida")
+
+        pagina = Pagina.objects.filter(id=int(str(pagina_id)), unidad=unidad).first()
+        if not pagina:
+            raise ValueError(f"Página {pagina_id} no encontrada en la unidad actual")
+
+        tipo = TipoDocumento.objects.filter(id=int(str(tipo_documento_id)), unidad=unidad).first()
+        if not tipo:
+            raise ValueError(f"Tipo de documento {tipo_documento_id} no encontrado en la unidad actual")
+
+        with transaction.atomic():
+            doc = Documento.objects.create(
+                unidad=unidad,
+                lote=pagina.lote,
+                tipo_documento=tipo,
+                es_doble_cara=False,
+                nombre_final=tipo.nombre,
+                estado='confirmado',
+            )
+            doc.paginas.set([pagina])
+
+            pagina.estado = 'confirmada'
+            pagina.save(update_fields=['estado'])
+
+            from .agrupador import actualizar_firma_tipo_documento
+            actualizar_firma_tipo_documento(tipo, [pagina])
+
+        return pagina
+
+    @strawberry.mutation
+    def crear_tipo_y_asignar(
+        self,
+        info: strawberry.types.Info,
+        pagina_id: strawberry.ID,
+        nombre: str,
+    ) -> PaginaType:
+        from django.db import transaction
+        from apps.core.tenancy import get_unidad_from_info
+
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            raise PermissionError("Usuario no autenticado o unidad no válida")
+
+        nombre_limpio = (nombre or "").strip()
+        if not nombre_limpio:
+            raise ValueError("El nombre del tipo de documento es requerido")
+
+        pagina = Pagina.objects.filter(id=int(str(pagina_id)), unidad=unidad).first()
+        if not pagina:
+            raise ValueError(f"Página {pagina_id} no encontrada en la unidad actual")
+
+        slug_tipo = _slug_de(nombre_limpio)
+
+        with transaction.atomic():
+            tipo = TipoDocumento.objects.filter(slug=slug_tipo, unidad=unidad).first()
+            if not tipo:
+                palabras = pagina.firma_palabras if isinstance(pagina.firma_palabras, list) else []
+                palabras_str = ', '.join(palabras[:10]) if palabras else nombre_limpio.lower()
+                firma = {"palabras": palabras} if palabras else {}
+                tipo = TipoDocumento.objects.create(
+                    unidad=unidad,
+                    nombre=nombre_limpio,
+                    slug=slug_tipo,
+                    palabras_clave=palabras_str,
+                    firma_consolidada=firma,
+                    color="#4F46E5",
+                )
+
+            tipo.ejemplos_paginas.add(pagina)
+
+            doc = Documento.objects.create(
+                unidad=unidad,
+                lote=pagina.lote,
+                tipo_documento=tipo,
+                es_doble_cara=False,
+                nombre_final=tipo.nombre,
+                estado='confirmado',
+            )
+            doc.paginas.set([pagina])
+
+            pagina.estado = 'confirmada'
+            pagina.save(update_fields=['estado'])
+
+            from .agrupador import actualizar_firma_tipo_documento
+            actualizar_firma_tipo_documento(tipo, [pagina])
+
+        return pagina
+
+    @strawberry.mutation
+    def descartar_pagina(
+        self,
+        info: strawberry.types.Info,
+        pagina_id: strawberry.ID,
+    ) -> PaginaType:
+        from apps.core.tenancy import get_unidad_from_info
+
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            raise PermissionError("Usuario no autenticado o unidad no válida")
+
+        pagina = Pagina.objects.filter(id=int(str(pagina_id)), unidad=unidad).first()
+        if not pagina:
+            raise ValueError(f"Página {pagina_id} no encontrada en la unidad actual")
+
+        pagina.estado = 'descartada'
+        pagina.descartable = True
+        pagina.save(update_fields=['estado', 'descartable'])
+
+        return pagina
+
+    @strawberry.mutation
+    def guardar_palabras_admin(
+        self,
+        info: strawberry.types.Info,
+        tipo_id: strawberry.ID,
+        palabras_seleccionadas: list[str],
+        palabras_obligatorias: list[str],
+    ) -> TipoDocumentoType:
+        """Guarda las palabras clave y obligatorias traducidas internamente sin que el admin vea pesos numéricos (Fase 10)."""
+        from apps.core.tenancy import get_unidad_from_info
+        from .agrupador import normalizar
+
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            raise PermissionError("Usuario no autenticado o unidad no válida")
+
+        tipo = TipoDocumento.objects.filter(id=int(str(tipo_id)), unidad=unidad).first()
+        if not tipo:
+            raise ValueError(f"Tipo de documento {tipo_id} no encontrado en la unidad actual")
+
+        obligatorias_limpias = sorted({
+            normalizar(w) for w in palabras_obligatorias if w and w.strip()
+        })
+        seleccionadas_limpias = {
+            normalizar(w) for w in palabras_seleccionadas if w and w.strip()
+        }
+        seleccionadas_limpias.update(obligatorias_limpias)
+
+        items_pesos = []
+        for w in sorted(seleccionadas_limpias):
+            if w in obligatorias_limpias:
+                items_pesos.append(f"{w}:5")
+            else:
+                items_pesos.append(f"{w}:3")
+
+        tipo.palabras_clave = ", ".join(items_pesos)
+        tipo.keywords_obligatorias = obligatorias_limpias
+        tipo.save(update_fields=['palabras_clave', 'keywords_obligatorias'])
+
+        return tipo

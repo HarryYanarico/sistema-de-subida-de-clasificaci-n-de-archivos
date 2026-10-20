@@ -106,3 +106,23 @@ export const GENERAR_SUGERENCIAS_KEYWORDS = gql`
     }
   }
 `
+
+export const GUARDAR_PALABRAS_ADMIN = gql`
+  mutation GuardarPalabrasAdmin(
+    $tipoId: ID!
+    $palabrasSeleccionadas: [String!]!
+    $palabrasObligatorias: [String!]!
+  ) {
+    guardarPalabrasAdmin(
+      tipoId: $tipoId
+      palabrasSeleccionadas: $palabrasSeleccionadas
+      palabrasObligatorias: $palabrasObligatorias
+    ) {
+      id
+      nombre
+      palabrasClave
+      keywordsObligatorias
+    }
+  }
+`
+
