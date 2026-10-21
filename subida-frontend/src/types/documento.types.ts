@@ -67,6 +67,7 @@ export interface Lote {
   nombreArchivoOriginal: string
   totalPaginas: number
   totalGrupos: number
+  persona?: Persona | null
   grupos?: Grupo[]
   paginas?: Pagina[]
   documentos?: Documento[]

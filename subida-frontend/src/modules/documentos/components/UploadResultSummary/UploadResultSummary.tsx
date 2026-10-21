@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { CheckCircle2, AlertCircle, Eye, ArrowRight } from 'lucide-react'
+import { CheckCircle2, AlertCircle, ArrowRight, Layers, Eye } from 'lucide-react'
 import { ROUTES } from '@config/routes'
 import { UploadResultSummaryProps } from './UploadResultSummary.types'
 
@@ -21,10 +21,10 @@ export function UploadResultSummary({
             )}
             <div>
               <CardTitle className="text-lg">
-                {resultado.success ? '¡Procesamiento Completado!' : 'Procesamiento Finalizado con Observaciones'}
+                {resultado.success ? '¡Archivos Subidos y Lotes Creados!' : 'Procesamiento Finalizado con Observaciones'}
               </CardTitle>
               <CardDescription>
-                {resultado.procesados} de {resultado.total_archivos} archivo{resultado.total_archivos !== 1 ? 's' : ''} procesados ({resultado.total_paginas} páginas extraídas y clasificadas)
+                {resultado.procesados} de {resultado.total_archivos} archivo{resultado.total_archivos !== 1 ? 's' : ''} procesados ({resultado.total_paginas} páginas extraídas y agrupadas)
               </CardDescription>
             </div>
           </div>
@@ -37,27 +37,52 @@ export function UploadResultSummary({
         {resultado.detalles.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Archivos Procesados Exitosamente
+              Lotes Listos para Revisión y Nombramiento
             </h4>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               {resultado.detalles.map((det, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between p-2 rounded-md bg-background border text-xs"
+                  className="flex flex-wrap items-center justify-between p-3 rounded-lg bg-background border text-xs gap-3"
                 >
                   <div className="min-w-0">
-                    <span className="font-medium">{det.archivo}</span>
-                    <span className="text-muted-foreground ml-2">
-                      → {det.persona_nombre} ({det.persona_codigo}) · {det.paginas} pág{det.paginas !== 1 ? 's' : ''}
-                    </span>
+                    <span className="font-semibold text-sm text-foreground">{det.archivo}</span>
+                    <div className="text-muted-foreground mt-0.5 flex items-center gap-2">
+                      {det.persona_codigo ? (
+                        <span>Estudiante: {det.persona_nombre || det.persona_codigo}</span>
+                      ) : (
+                        <span>Lote a nivel de unidad</span>
+                      )}
+                      <span>·</span>
+                      <span>{det.total_paginas || det.paginas} págs</span>
+                      {det.total_grupos ? (
+                        <>
+                          <span>·</span>
+                          <span className="text-primary font-medium">{det.total_grupos} grupos detectados</span>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
-                  <Link to={ROUTES.PERSONAS.CASILLERO(det.persona_id)}>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs px-2 gap-1 text-primary">
-                      <Eye className="h-3 w-3" />
-                      Ver Casillero
-                      <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </Link>
+
+                  <div className="flex items-center gap-2">
+                    {det.lote_id && (
+                      <Link to={ROUTES.LOTES.AGRUPAR(det.lote_id)}>
+                        <Button size="sm" className="h-8 text-xs px-3 gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground">
+                          <Layers className="h-3.5 w-3.5" />
+                          Revisar Grupos y Nombrar Tipos
+                          <ArrowRight className="h-3 w-3" />
+                        </Button>
+                      </Link>
+                    )}
+                    {det.persona_id && (
+                      <Link to={ROUTES.PERSONAS.CASILLERO(det.persona_id)}>
+                        <Button variant="ghost" size="sm" className="h-8 text-xs px-2 gap-1 text-muted-foreground hover:text-foreground">
+                          <Eye className="h-3 w-3" />
+                          Casillero
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

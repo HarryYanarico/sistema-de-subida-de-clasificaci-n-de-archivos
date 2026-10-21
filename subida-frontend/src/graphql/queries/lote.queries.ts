@@ -22,6 +22,12 @@ export const GET_LOTE = gql`
       totalPaginas
       totalGrupos
       createdAt
+      persona {
+        id
+        codigo
+        nombres
+        apellidos
+      }
       parejasSugeridas {
         paginaAnversoId
         paginaReversoId

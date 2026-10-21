@@ -141,6 +141,7 @@ class GrupoType:
 )
 class LoteType:
     unidad: Optional[UnidadType]
+    persona: Optional[PersonaType]
 
     @strawberry_django.field
     def grupos(self) -> list[GrupoType]:

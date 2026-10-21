@@ -688,24 +688,41 @@ class Mutation:
                 nombre_final_doc = tipo.nombre if tipo else (lote.nombre_archivo_original or f"Documento Grupo {grupo.id}")
                 es_doble = bool(asig.es_doble_cara) if asig.es_doble_cara is not None else (len(pags_grupo) == 2)
 
+                archivo_origen = pags_grupo[0].pdf_origen if (pags_grupo and getattr(pags_grupo[0], 'pdf_origen', None)) else lote.nombre_archivo_original
+                p_num = pags_grupo[0].nro_pagina_en_pdf if pags_grupo else 1
+                p_hash = pags_grupo[0].phash if pags_grupo else None
+                txt_extraido = '\n'.join(p.texto_ocr for p in pags_grupo if p.texto_ocr)
+
                 if es_doble and len(pags_grupo) == 2:
                     doc = Documento.objects.create(
                         unidad=unidad,
                         lote=lote,
+                        persona=getattr(lote, 'persona', None),
                         tipo_documento=tipo,
                         es_doble_cara=True,
                         nombre_final=nombre_final_doc,
                         estado='confirmado',
+                        archivo_original=archivo_origen,
+                        subido_por=lote.subido_por,
+                        pagina_numero=p_num,
+                        texto_extraido=txt_extraido,
+                        phash=p_hash,
                     )
                     doc.paginas.set(pags_grupo)
                 elif len(pags_grupo) > 0:
                     doc = Documento.objects.create(
                         unidad=unidad,
                         lote=lote,
+                        persona=getattr(lote, 'persona', None),
                         tipo_documento=tipo,
                         es_doble_cara=es_doble,
                         nombre_final=nombre_final_doc,
                         estado='confirmado',
+                        archivo_original=archivo_origen,
+                        subido_por=lote.subido_por,
+                        pagina_numero=p_num,
+                        texto_extraido=txt_extraido,
+                        phash=p_hash,
                     )
                     doc.paginas.set(pags_grupo)
 
