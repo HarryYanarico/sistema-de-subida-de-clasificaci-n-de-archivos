@@ -6,9 +6,11 @@ un nombre de campo o un tipo de argumento cambiado rompe el frontend en
 tiempo de ejecucion, no en compilacion.
 """
 
+from typing import cast, Any
 from django.test import Client, SimpleTestCase, TestCase
 
 from config.schema import schema
+
 
 # (nombre del campo, [(argumento, tipo SDL sin el valor por defecto)])
 # Sistema single-tenant: sin Unidad ni argumentos unidadId.
@@ -41,6 +43,8 @@ ESPERADO = {
         'grupos': [('loteId', 'ID!')],
         'paginas': [('grupoId', 'ID'), ('limit', 'Int'), ('loteId', 'ID'), ('offset', 'Int')],
         'paginasDuplicadas': [('limit', 'Int'), ('offset', 'Int')],
+        'paginasSinAgrupar': [('limit', 'Int'), ('offset', 'Int')],
+        'sugerenciasAdmin': [('tipoId', 'ID!')],
     },
     'Mutation': {
         'loginUser': [('password', 'String!'), ('username', 'String!')],
@@ -97,6 +101,22 @@ ESPERADO = {
             ('asignaciones', '[AsignacionGrupoInput!]!'),
             ('loteId', 'ID!'),
         ],
+        'asignarPaginaATipo': [
+            ('paginaId', 'ID!'),
+            ('tipoDocumentoId', 'ID!'),
+        ],
+        'crearTipoYAsignar': [
+            ('nombre', 'String!'),
+            ('paginaId', 'ID!'),
+        ],
+        'descartarPagina': [
+            ('paginaId', 'ID!'),
+        ],
+        'guardarPalabrasAdmin': [
+            ('palabrasObligatorias', '[String!]!'),
+            ('palabrasSeleccionadas', '[String!]!'),
+            ('tipoId', 'ID!'),
+        ],
     },
 }
 
@@ -114,13 +134,15 @@ class ContratoSchemaTests(SimpleTestCase):
     def test_campos_de_la_raiz(self):
         for raiz, campos in ESPERADO.items():
             with self.subTest(raiz=raiz):
-                reales = set(self.graphql.query_type.fields if raiz == 'Query'
-                             else self.graphql.mutation_type.fields)
+                tipo = self.graphql.query_type if raiz == 'Query' else self.graphql.mutation_type
+                assert tipo is not None
+                reales = set(tipo.fields)
                 self.assertEqual(reales, set(campos))
 
     def test_argumentos_de_cada_operacion(self):
         for raiz, campos in ESPERADO.items():
             tipo_raiz = self.graphql.query_type if raiz == 'Query' else self.graphql.mutation_type
+            assert tipo_raiz is not None
             for nombre, argumentos in campos.items():
                 with self.subTest(operacion=nombre):
                     campo = tipo_raiz.fields[nombre]
@@ -149,7 +171,7 @@ class ContratoSchemaTests(SimpleTestCase):
             ],
             'LoteType': [
                 'createdAt', 'documentos', 'estado', 'grupos', 'id', 'nombreArchivoOriginal',
-                'paginas', 'parejasSugeridas', 'totalGrupos', 'totalPaginas', 'unidad',
+                'paginas', 'parejasSugeridas', 'persona', 'totalGrupos', 'totalPaginas', 'unidad',
             ],
             'GrupoType': [
                 'createdAt', 'estado', 'firmaConsolidada', 'id', 'loteId', 'paginas',
@@ -157,7 +179,7 @@ class ContratoSchemaTests(SimpleTestCase):
             ],
             'PaginaType': [
                 'createdAt', 'descartable', 'estado', 'firmaEstructura', 'firmaPalabras',
-                'grupo', 'id', 'loteId', 'nroPaginaEnPdf', 'pdfOrigen', 'phash', 'textoOcr', 'unidad',
+                'grupo', 'id', 'loteId', 'loteNombre', 'nroPaginaEnPdf', 'pdfOrigen', 'phash', 'textoOcr', 'unidad',
             ],
             'DocumentoByPersona': ['clasificados', 'documentos', 'pendientes', 'personaId',
                                    'totalPaginas'],
@@ -194,7 +216,8 @@ class ContratoSchemaTests(SimpleTestCase):
         }
         for nombre, campos in esperados.items():
             with self.subTest(tipo=nombre):
-                self.assertEqual(set(self.graphql.type_map[nombre].fields), set(campos))
+                tipo_obj = cast(Any, self.graphql.type_map[nombre])
+                self.assertEqual(set(tipo_obj.fields), set(campos))
 
     def test_las_relaciones_anidadas_no_degeneran(self):
         """`persona` y `tipoDocumento` deben ser los tipos reales.
@@ -202,7 +225,7 @@ class ContratoSchemaTests(SimpleTestCase):
         Sin redeclarar la FK, strawberry_django deja `DjangoModelType { pk }`,
         que rompe las selections anidadas del frontend en silencio.
         """
-        documento = self.graphql.type_map['DocumentoType']
+        documento = cast(Any, self.graphql.type_map['DocumentoType'])
         self.assertEqual(str(documento.fields['persona'].type), 'PersonaType!')
         self.assertEqual(str(documento.fields['tipoDocumento'].type), 'TipoDocumentoType')
 
@@ -210,7 +233,8 @@ class ContratoSchemaTests(SimpleTestCase):
         """`estado` y `role` pasaron a String con el valor de la base."""
         for nombre_tipo, campo in [('DocumentoType', 'estado'), ('UserType', 'role')]:
             with self.subTest(campo=campo):
-                tipo = str(self.graphql.type_map[nombre_tipo].fields[campo].type)
+                tipo_obj = cast(Any, self.graphql.type_map[nombre_tipo])
+                tipo = str(tipo_obj.fields[campo].type)
                 self.assertEqual(tipo, 'String!')
 
 

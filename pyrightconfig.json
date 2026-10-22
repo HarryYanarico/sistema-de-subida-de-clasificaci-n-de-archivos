@@ -1,0 +1,26 @@
+{
+  "include": [
+    "subida-backend"
+  ],
+  "extraPaths": [
+    "subida-backend",
+    "C:\\Users\\flore\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOptionalSubscript": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportInvalidTypeForm": "none",
+  "reportReturnType": "none",
+  "reportArgumentType": "none",
+  "reportAssignmentType": "none",
+  "reportIncompatibleMethodOverride": "none",
+  "reportIncompatibleVariableOverride": "none",
+  "reportOperatorIssue": "none"
+}

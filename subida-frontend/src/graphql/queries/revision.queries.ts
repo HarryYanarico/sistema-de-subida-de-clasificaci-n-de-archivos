@@ -27,3 +27,21 @@ export const GET_DOCUMENTOS_DUPLICADOS = gql`
   }
   ${FRAGMENT_DOCUMENTO_REVISION}
 `
+
+export const GET_PAGINAS_SIN_AGRUPAR = gql`
+  query GetPaginasSinAgrupar($limit: Int, $offset: Int) {
+    paginasSinAgrupar(limit: $limit, offset: $offset) {
+      id
+      loteId
+      loteNombre
+      pdfOrigen
+      nroPaginaEnPdf
+      textoOcr
+      phash
+      descartable
+      estado
+      createdAt
+    }
+  }
+`
+

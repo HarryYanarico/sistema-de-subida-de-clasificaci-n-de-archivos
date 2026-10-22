@@ -644,3 +644,147 @@ def detectar_parejas_consecutivas(
 
     return parejas_detectadas
 
+
+def actualizar_firma_tipo_documento(tipo: Any, paginas_nuevas: list[Any]) -> dict[str, Any]:
+    """Actualiza la firma consolidada y ejemplos_paginas de un TipoDocumento de forma incremental (FIFO máx 20).
+
+    Cada vez que se confirma un Documento (Fase 5 o Fase 7):
+    - Se incorporan las nuevas páginas a `ejemplos_paginas` (hasta un máximo de 20, FIFO).
+    - Se recalcula `firma_consolidada` con el promedio de las palabras (top 20 por frecuencia agregada)
+      y estructura promedio.
+    """
+    if not tipo or not paginas_nuevas:
+        return {}
+
+    ejemplos_mgr = getattr(tipo, 'ejemplos_paginas', None)
+    if ejemplos_mgr is not None and hasattr(ejemplos_mgr, 'add'):
+        for p in paginas_nuevas:
+            ejemplos_mgr.add(p)
+
+        # FIFO: Mantener como máximo los 20 más recientes por ID descendente
+        if hasattr(ejemplos_mgr, 'order_by'):
+            ejemplos_qs = ejemplos_mgr.order_by('-id')[:20]
+            ejemplos_lista = list(ejemplos_qs)
+            ejemplos_mgr.set(ejemplos_lista)
+        else:
+            ejemplos_lista = list(ejemplos_mgr.all())[-20:]
+    else:
+        ejemplos_lista = paginas_nuevas
+
+    nueva_firma = _construir_firma_consolidada(ejemplos_lista)
+
+    if hasattr(tipo, 'firma_consolidada'):
+        tipo.firma_consolidada = nueva_firma
+        if hasattr(tipo, 'save'):
+            tipo.save(update_fields=['firma_consolidada'])
+    elif isinstance(tipo, dict):
+        tipo['firma_consolidada'] = nueva_firma
+
+    return nueva_firma
+
+
+def calcular_sugerencias_admin(tipo: Any) -> dict[str, Any]:
+    """Calcula sugerencias en lenguaje natural para el administrador al editar un TipoDocumento (Fase 10).
+
+    - > 80% de ejemplos_paginas -> 'siempre' ("Siempre aparecen en este tipo").
+    - 30% - 80% de ejemplos_paginas -> 'suelen' ("Suelen aparecer").
+    - < 30% que estaban configuradas antes -> 'ya_no_aparecen' ("Ya no aparecen. ¿Quitar?").
+    Si hay menos de 3 ejemplos_paginas, devuelve suficientes_ejemplos=False.
+    """
+    ejemplos_mgr = getattr(tipo, 'ejemplos_paginas', None)
+    if ejemplos_mgr is not None and hasattr(ejemplos_mgr, 'all'):
+        ejemplos = list(ejemplos_mgr.all())
+    elif isinstance(tipo, dict):
+        ejemplos = tipo.get('ejemplos_paginas', [])
+    else:
+        ejemplos = []
+
+    total_ejemplos = len(ejemplos)
+    if total_ejemplos < 3:
+        return {
+            'suficientes_ejemplos': False,
+            'total_ejemplos': total_ejemplos,
+            'mensaje': 'Aún no hay suficientes documentos para sugerir palabras',
+            'siempre': [],
+            'suelen': [],
+            'ya_no_aparecen': [],
+        }
+
+    # Palabras configuradas actualmente
+    palabras_raw = (
+        getattr(tipo, 'palabras_clave', '')
+        if not isinstance(tipo, dict)
+        else tipo.get('palabras_clave', '')
+    )
+    palabras_configuradas = set()
+    if palabras_raw:
+        for item in str(palabras_raw).split(','):
+            w = item.split(':')[0].strip().lower()
+            if w:
+                palabras_configuradas.add(normalizar(w))
+
+    obligatorias_raw = (
+        getattr(tipo, 'keywords_obligatorias', [])
+        if not isinstance(tipo, dict)
+        else tipo.get('keywords_obligatorias', [])
+    )
+    obligatorias_set = {normalizar(w) for w in (obligatorias_raw or [])}
+    palabras_configuradas.update(obligatorias_set)
+
+    # Recolectar palabras por cada documento de ejemplo
+    palabras_por_doc: list[set[str]] = []
+    for p in ejemplos:
+        f = getattr(p, '_firma_calculada', None) or extraer_firma(p)
+        palabras_doc = set(_obtener_palabras(f))
+        texto = getattr(p, 'texto_ocr', '') if not isinstance(p, dict) else p.get('texto_ocr', '')
+        if texto:
+            tokens = [
+                t
+                for t in normalizar(texto).split()
+                if len(t) > 2 and t not in STOPWORDS_ES and not t.isdigit()
+            ]
+            palabras_doc.update(tokens)
+        palabras_por_doc.append(palabras_doc)
+
+    # Conteo de frecuencia de documentos
+    doc_freq = Counter()
+    for doc_set in palabras_por_doc:
+        for w in doc_set:
+            doc_freq[w] += 1
+
+    siempre = []
+    suelen = []
+
+    for w, count in doc_freq.most_common(40):
+        ratio = count / total_ejemplos
+        item = {
+            'palabra': w,
+            'es_obligatoria': w in obligatorias_set,
+            'seleccionada': (w in palabras_configuradas) or (ratio >= 0.8),
+        }
+        if ratio >= 0.8:
+            siempre.append(item)
+        elif ratio >= 0.3:
+            suelen.append(item)
+
+    # Palabras que estaban antes pero ya no aparecen (o aparecen en < 30%)
+    ya_no_aparecen = []
+    for w in sorted(palabras_configuradas):
+        ratio = doc_freq.get(w, 0) / total_ejemplos
+        if ratio < 0.3:
+            ya_no_aparecen.append({
+                'palabra': w,
+                'es_obligatoria': w in obligatorias_set,
+                'seleccionada': False,  # Sugerir quitar
+            })
+
+    return {
+        'suficientes_ejemplos': True,
+        'total_ejemplos': total_ejemplos,
+        'mensaje': None,
+        'siempre': siempre,
+        'suelen': suelen,
+        'ya_no_aparecen': ya_no_aparecen,
+    }
+
+

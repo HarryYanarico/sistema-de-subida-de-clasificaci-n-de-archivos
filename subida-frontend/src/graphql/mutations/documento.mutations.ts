@@ -163,3 +163,34 @@ export const QUITAR_PAGINA_DE_DOCUMENTO = gql`
   }
 `
 
+export const ASIGNAR_PAGINA_A_TIPO = gql`
+  mutation AsignarPaginaATipo($paginaId: ID!, $tipoDocumentoId: ID!) {
+    asignarPaginaATipo(paginaId: $paginaId, tipoDocumentoId: $tipoDocumentoId) {
+      id
+      estado
+      descartable
+    }
+  }
+`
+
+export const CREAR_TIPO_Y_ASIGNAR = gql`
+  mutation CrearTipoYAsignar($paginaId: ID!, $nombre: String!) {
+    crearTipoYAsignar(paginaId: $paginaId, nombre: $nombre) {
+      id
+      estado
+      descartable
+    }
+  }
+`
+
+export const DESCARTAR_PAGINA = gql`
+  mutation DescartarPagina($paginaId: ID!) {
+    descartarPagina(paginaId: $paginaId) {
+      id
+      estado
+      descartable
+    }
+  }
+`
+
+

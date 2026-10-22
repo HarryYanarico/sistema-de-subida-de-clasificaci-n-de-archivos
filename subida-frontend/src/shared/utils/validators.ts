@@ -65,3 +65,26 @@ export function validarArchivoPDF(file: File): { valido: boolean; error?: string
 
   return { valido: true }
 }
+
+/**
+ * Sanitiza el nombre de un tipo de documento para evitar errores humanos:
+ * - Convierte a MAYÚSCULAS en tiempo real.
+ * - Permite solo letras mayúsculas con tildes (A-Z, Á, É, Í, Ó, Ú, Ñ, Ü), números (0-9),
+ *   puntos (.) para abreviaciones (ej: 'CERT.', 'RES.') y espacios simples.
+ * - Elimina saltos de línea y tabulaciones.
+ * - Colapsa espacios consecutivos a un solo espacio.
+ * - No permite espacios al inicio.
+ */
+export function sanitizarNombreTipoDocumento(input: string): string {
+  if (!input) return ''
+  return input
+    .toUpperCase()
+    // Reemplazar saltos de línea y tabulaciones por espacios
+    .replace(/[\r\n\t]+/g, ' ')
+    // Permitir solo letras mayúsculas con tildes/ñ/ü, números, puntos y espacios
+    .replace(/[^A-ZÁÉÍÓÚÑÜ0-9\s.]/g, '')
+    // Colapsar espacios consecutivos
+    .replace(/\s+/g, ' ')
+    // Evitar espacios al inicio
+    .replace(/^\s+/, '')
+}

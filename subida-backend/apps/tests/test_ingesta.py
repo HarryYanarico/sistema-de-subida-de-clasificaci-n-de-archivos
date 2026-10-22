@@ -166,3 +166,57 @@ class _Processor:
 
     def process_pdf(self, persona_codigo, filename, contenido, persona=None, **kwargs):
         return list(self._paginas)
+
+
+class IngestaLoteWorkflowTests(GraphQLTestCase):
+    def setUp(self):
+        super().setUp()
+        from apps.core.models import Unidad
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        self.unidad = Unidad.objects.create(codigo="TEST_U", nombre="Unidad Test")
+        self.user = User.objects.create_user(username="test_user", password="password")
+        self.persona = Persona.objects.create(
+            codigo='216013731',
+            nombres='Carlos',
+            apellidos='Montes',
+            ci='8888888',
+            unidad=self.unidad,
+        )
+
+    def test_procesar_ingesta_lote_crea_lote_y_grupos(self):
+        from apps.storage.ingesta import procesar_ingesta_lote
+        import fitz
+        from unittest.mock import patch
+
+        doc = fitz.open()
+        p1 = doc.new_page()
+        p1.insert_text((50, 50), "Certificado de notas del alumno con materias y calificaciones aprobadas")
+        p2 = doc.new_page()
+        p2.insert_text((50, 50), "Reverso del certificado con firmas de rectorado y sellos oficiales")
+        p3 = doc.new_page()
+        p3.insert_text((50, 50), "Factura de pago de matricula bolivianos monto bs 350 nit 123456789")
+        pdf_bytes = doc.tobytes()
+        doc.close()
+
+        with patch('apps.storage.services.MinIOService.upload_pdf', return_value='personas/216013731/original/test.pdf'):
+            ok, res = procesar_ingesta_lote(
+                '216013731_documentos.pdf',
+                pdf_bytes,
+                usuario=self.user,
+                unidad=self.unidad,
+            )
+
+        self.assertTrue(ok)
+        self.assertIn('lote_id', res)
+        self.assertEqual(res['persona_codigo'], '216013731')
+        self.assertEqual(res['total_paginas'], 3)
+        self.assertGreaterEqual(res['total_grupos'], 1)
+
+        from apps.documentos.models import Lote, Grupo, Pagina
+        lote = Lote.objects.get(id=res['lote_id'])
+        self.assertEqual(lote.estado, 'pendiente_nombres')
+        self.assertEqual(lote.persona, self.persona)
+        self.assertEqual(lote.total_paginas, 3)
+        self.assertEqual(Pagina.objects.filter(lote=lote).count(), 3)
+        self.assertEqual(Grupo.objects.filter(lote=lote).count(), res['total_grupos'])

@@ -11,6 +11,7 @@ import {
   HelpCircle,
   FileQuestion,
   Copy,
+  Layers,
 } from 'lucide-react'
 import { Header } from './Header'
 import { Sidebar } from './Sidebar'
@@ -21,8 +22,18 @@ const navigationItems: NavItem[] = [
   { name: 'Dashboard', href: ROUTES.DASHBOARD, icon: LayoutDashboard },
   { name: 'Personas', href: ROUTES.PERSONAS.ROOT, icon: Users },
   { name: 'Visor Documentos', href: ROUTES.PERSONAS.VISTA_LISTA, icon: Eye },
-  { name: 'Subir Documentos', href: ROUTES.DOCUMENTOS.SUBIR, icon: Upload },
-  { name: 'Documentos Pendientes', href: ROUTES.DOCUMENTOS.PENDIENTES, icon: AlertCircle },
+  {
+    name: 'Subir Documentos',
+    href: ROUTES.DOCUMENTOS.SUBIR,
+    icon: Upload,
+    roles: ['admin', 'operador'],
+  },
+  {
+    name: 'Documentos Pendientes',
+    href: ROUTES.DOCUMENTOS.PENDIENTES,
+    icon: AlertCircle,
+    roles: ['admin', 'operador'],
+  },
   {
     name: 'Revisión: Dudosas',
     href: ROUTES.REVISION.DUDOSAS,
@@ -41,7 +52,18 @@ const navigationItems: NavItem[] = [
     icon: Copy,
     roles: ['admin', 'operador'],
   },
-  { name: 'Tipos de Documento', href: ROUTES.CONFIGURACION.TIPOS_DOCUMENTO, icon: FileText },
+  {
+    name: 'Revisión: Sin Agrupar',
+    href: ROUTES.REVISION.SIN_AGRUPAR,
+    icon: Layers,
+    roles: ['admin', 'operador'],
+  },
+  {
+    name: 'Tipos de Documento',
+    href: ROUTES.CONFIGURACION.TIPOS_DOCUMENTO,
+    icon: FileText,
+    roles: ['admin'],
+  },
 ]
 
 export function Layout({ children }: LayoutProps) {

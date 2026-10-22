@@ -1,10 +1,13 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { ROUTES } from '@config/routes'
+import { useAuth } from '@/contexts/AuthContext'
 import { FileDropzone } from '../components/FileDropzone/FileDropzone'
 import { UploadQueue } from '../components/UploadQueue/UploadQueue'
 import { UploadProgress } from '../components/UploadProgress/UploadProgress'
 import { UploadResultSummary } from '../components/UploadResultSummary/UploadResultSummary'
-import { extraerCodigo, esCodigoValido, uploadBatchFile } from '../services/upload.service'
+import { uploadBatchFile } from '../services/upload.service'
 import {
   ResultadoBatch,
   ProgresoArchivo,
@@ -13,9 +16,12 @@ import {
 } from '../types/documentos.types'
 
 export function SubirDocumentosPage() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
   const [files, setFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [resultado, setResultado] = useState<ResultadoBatch | null>(null)
+  const [nonPdfError, setNonPdfError] = useState<string | null>(null)
 
   // Estados para carga progresiva
   const [progresoLista, setProgresoLista] = useState<ProgresoArchivo[]>([])
@@ -23,7 +29,18 @@ export function SubirDocumentosPage() {
   const [faseActual, setFaseActual] = useState<string>('')
 
   const addFiles = (newFiles: FileList | File[]) => {
-    const pdfFiles = Array.from(newFiles).filter(
+    setNonPdfError(null)
+    const arrayFiles = Array.from(newFiles)
+    const invalidFiles = arrayFiles.filter(
+      (file) => file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')
+    )
+    if (invalidFiles.length > 0) {
+      setNonPdfError(
+        `Se descartaron ${invalidFiles.length} archivo(s) porque solo se admiten documentos en formato PDF.`
+      )
+    }
+
+    const pdfFiles = arrayFiles.filter(
       (file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     )
     setFiles((prev) => [...prev, ...pdfFiles])
@@ -37,36 +54,33 @@ export function SubirDocumentosPage() {
     setFiles([])
     setResultado(null)
     setProgresoLista([])
+    setNonPdfError(null)
   }
 
-  const archivosValidos = files.filter((file) => esCodigoValido(extraerCodigo(file.name)))
-  const archivosInvalidos = files.filter((file) => !esCodigoValido(extraerCodigo(file.name)))
-  const tieneInvalidos = archivosInvalidos.length > 0
-
   const handleUpload = async () => {
-    if (archivosValidos.length === 0 || tieneInvalidos) return
+    if (files.length === 0) return
 
     setUploading(true)
     setResultado(null)
+    setNonPdfError(null)
 
-    const listaInicial: ProgresoArchivo[] = archivosValidos.map((f) => ({
+    const listaInicial: ProgresoArchivo[] = files.map((f) => ({
       archivo: f.name,
       estado: 'pendiente',
     }))
     setProgresoLista(listaInicial)
 
-    const userStr = localStorage.getItem('user')
-    const userId = userStr ? JSON.parse(userStr)?.id : null
+    const userId = user?.id ? Number(user.id) : null
 
     let procesadosTotal = 0
     let paginasTotal = 0
     const detalles: DetalleArchivo[] = []
     const errores: ErrorArchivo[] = []
 
-    for (let i = 0; i < archivosValidos.length; i++) {
-      const file = archivosValidos[i]
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
       setArchivoActualIndex(i)
-      setFaseActual(`Procesando archivo ${i + 1} de ${archivosValidos.length}: ${file.name}`)
+      setFaseActual(`Procesando archivo ${i + 1} de ${files.length}: ${file.name}`)
 
       setProgresoLista((prev) =>
         prev.map((item, idx) => (idx === i ? { ...item, estado: 'procesando' } : item))
@@ -78,7 +92,7 @@ export function SubirDocumentosPage() {
         if (data.detalles && data.detalles.length > 0) {
           const det = data.detalles[0]
           procesadosTotal += 1
-          paginasTotal += det.paginas
+          paginasTotal += det.total_paginas || det.paginas || 0
           detalles.push(det)
 
           setProgresoLista((prev) =>
@@ -87,7 +101,9 @@ export function SubirDocumentosPage() {
                 ? {
                     ...item,
                     estado: 'completado',
-                    paginas: det.paginas,
+                    lote_id: det.lote_id,
+                    total_grupos: det.total_grupos,
+                    paginas: det.total_paginas || det.paginas,
                     persona_codigo: det.persona_codigo,
                     persona_nombre: det.persona_nombre,
                     persona_id: det.persona_id,
@@ -115,24 +131,33 @@ export function SubirDocumentosPage() {
       }
     }
 
-    setResultado({
-      success: errores.length === 0,
-      total_archivos: archivosValidos.length,
-      procesados: procesadosTotal,
-      total_paginas: paginasTotal,
-      errores,
-      detalles,
-    })
-
     setUploading(false)
     setArchivoActualIndex(-1)
     setFaseActual('')
     setFiles([])
+
+    // Si se subió 1 solo archivo y se procesó exitosamente con su lote:
+    // Redirigir de inmediato a la pantalla de agrupamiento de ese lote
+    if (files.length === 1 && detalles.length === 1 && detalles[0].lote_id) {
+      navigate(ROUTES.LOTES.AGRUPAR(detalles[0].lote_id))
+      return
+    }
+
+    // Si se subieron varios archivos o hubo observaciones, mostrar resumen con accesos directos
+    setResultado({
+      success: errores.length === 0,
+      total_archivos: files.length,
+      procesados: procesadosTotal,
+      total_paginas: paginasTotal,
+      lote_id: detalles[0]?.lote_id || null,
+      errores,
+      detalles,
+    })
   }
 
   const porcentajeProgreso =
-    archivosValidos.length > 0 && archivoActualIndex >= 0
-      ? Math.round(((archivoActualIndex + 1) / archivosValidos.length) * 100)
+    files.length > 0 && archivoActualIndex >= 0
+      ? Math.round(((archivoActualIndex + 1) / files.length) * 100)
       : 0
 
   return (
@@ -141,7 +166,7 @@ export function SubirDocumentosPage() {
         <div>
           <h1 className="text-3xl font-bold">Subir Documentos</h1>
           <p className="text-muted-foreground mt-1">
-            Los folios se extraen, analizan y clasifican automáticamente a partir del código de persona.
+            Sube archivos PDF para agrupar automáticamente sus páginas por similitud y asignarles su tipo.
           </p>
         </div>
         {files.length > 0 && !uploading && (
@@ -150,6 +175,20 @@ export function SubirDocumentosPage() {
           </Button>
         )}
       </div>
+
+      {nonPdfError && (
+        <div className="p-3.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-center justify-between">
+          <span>{nonPdfError}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setNonPdfError(null)}
+            className="h-7 text-xs text-destructive hover:bg-destructive/20"
+          >
+            Cerrar
+          </Button>
+        </div>
+      )}
 
       {/* Zona de arrastrar y soltar */}
       <FileDropzone onFilesAdded={addFiles} disabled={uploading} />

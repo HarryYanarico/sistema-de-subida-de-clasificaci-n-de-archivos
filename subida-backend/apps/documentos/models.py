@@ -74,6 +74,10 @@ class Lote(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='lotes_subidos', verbose_name='Subido por'
     )
+    persona = models.ForeignKey(
+        Persona, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='lotes', verbose_name='Persona'
+    )
     estado = models.CharField(max_length=30, choices=ESTADO_CHOICES, default='procesando')
     nombre_archivo_original = models.CharField(max_length=500, blank=True, default='')
     total_paginas = models.IntegerField(default=0)

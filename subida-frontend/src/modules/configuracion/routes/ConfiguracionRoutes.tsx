@@ -6,5 +6,6 @@ export const configuracionRoutes: RouteDefinition[] = [
   {
     path: ROUTES.CONFIGURACION.TIPOS_DOCUMENTO,
     element: <TiposDocumentoPage />,
+    roles: ['admin'],
   },
 ]

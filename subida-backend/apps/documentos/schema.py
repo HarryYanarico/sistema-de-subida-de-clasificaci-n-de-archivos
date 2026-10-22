@@ -68,11 +68,32 @@ class PaginaType:
     def firma_estructura(self) -> strawberry.scalars.JSON:
         return self.firma_estructura or {}
 
+    @strawberry_django.field
+    def lote_nombre(self) -> Optional[str]:
+        return self.lote.nombre_archivo_original if self.lote else None
+
 
 @strawberry.type
 class ParejaSugeridaType:
     pagina_anverso_id: strawberry.ID
     pagina_reverso_id: strawberry.ID
+
+
+@strawberry.type
+class PalabraSugeridaType:
+    palabra: str
+    es_obligatoria: bool
+    seleccionada: bool
+
+
+@strawberry.type
+class SugerenciasAdminType:
+    suficientes_ejemplos: bool
+    total_ejemplos: int
+    mensaje: Optional[str]
+    siempre: list[PalabraSugeridaType]
+    suelen: list[PalabraSugeridaType]
+    ya_no_aparecen: list[PalabraSugeridaType]
 
 
 @strawberry_django.type(
@@ -120,6 +141,7 @@ class GrupoType:
 )
 class LoteType:
     unidad: Optional[UnidadType]
+    persona: Optional[PersonaType]
 
     @strawberry_django.field
     def grupos(self) -> list[GrupoType]:
@@ -510,3 +532,44 @@ class Query:
         except Exception:
             return []
         return list(_paginar(qs.order_by('-created_at', 'id'), limit, offset))
+
+    @strawberry.field
+    def paginas_sin_agrupar(
+        self,
+        info: strawberry.types.Info,
+        limit: Optional[int] = 50,
+        offset: Optional[int] = 0,
+    ) -> list[PaginaType]:
+        """Devuelve las páginas con estado 'sin_agrupar' y no descartables de la unidad del request."""
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            qs = Pagina.objects.filter(unidad=unidad, estado='sin_agrupar', descartable=False)
+        except Exception:
+            return []
+        return list(_paginar(qs.order_by('-created_at', 'id'), limit, offset))
+
+    @strawberry.field
+    def sugerencias_admin(
+        self,
+        info: strawberry.types.Info,
+        tipo_id: strawberry.ID,
+    ) -> SugerenciasAdminType:
+        """Devuelve sugerencias estadísticas en lenguaje natural para un tipo de documento de la unidad (Fase 10)."""
+        from apps.core.tenancy import get_unidad_from_info
+        from .agrupador import calcular_sugerencias_admin
+
+        unidad = get_unidad_from_info(info)
+        tipo = TipoDocumento.objects.filter(id=int(str(tipo_id)), unidad=unidad).first()
+        if not tipo:
+            raise ValueError(f"Tipo de documento {tipo_id} no encontrado en la unidad actual")
+
+        resultado = calcular_sugerencias_admin(tipo)
+        return SugerenciasAdminType(
+            suficientes_ejemplos=resultado['suficientes_ejemplos'],
+            total_ejemplos=resultado['total_ejemplos'],
+            mensaje=resultado['mensaje'],
+            siempre=[PalabraSugeridaType(**item) for item in resultado['siempre']],
+            suelen=[PalabraSugeridaType(**item) for item in resultado['suelen']],
+            ya_no_aparecen=[PalabraSugeridaType(**item) for item in resultado['ya_no_aparecen']],
+        )
