@@ -12,7 +12,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Plus, Sparkles, X, Loader2 } from 'lucide-react'
 import { TipoDocumentoList } from '../components/TipoDocumentoList/TipoDocumentoList'
 import { TipoDocumentoForm } from '../components/TipoDocumentoForm/TipoDocumentoForm'
-import { formatKeywordsForPayload, parseKeywords } from '../services/tipos-documento.service'
+import {
+  formatKeywordsForPayload,
+  parseKeywords,
+  parseKeywordsToUI,
+} from '../services/tipos-documento.service'
 import { TipoForm } from '../types/configuracion.types'
 import { TipoDocumento } from '@app-types/index'
 
@@ -69,15 +73,19 @@ export function TiposDocumentoPage() {
 
   const openCreate = () => {
     setEditingId(null)
-    setForm(emptyForm)
+    setForm({ nombre: '', palabrasClave: [], keywordsItems: [] })
     setDialogOpen(true)
   }
 
   const openEdit = (tipo: TipoDocumento) => {
     setEditingId(tipo.id)
+    const rawKeywords = tipo.palabrasClave || tipo.palabras_clave || ''
+    const obligatorias = (tipo as any).keywordsObligatorias || (tipo as any).keywords_obligatorias || []
+    const items = parseKeywordsToUI(rawKeywords, obligatorias)
     setForm({
       nombre: tipo.nombre,
-      palabrasClave: parseKeywords(tipo.palabrasClave || tipo.palabras_clave),
+      palabrasClave: items.map((i) => `${i.palabra}:${i.esObligatoria ? 5 : 3}`),
+      keywordsItems: items,
     })
     setDialogOpen(true)
   }

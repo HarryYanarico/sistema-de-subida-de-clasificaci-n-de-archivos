@@ -255,3 +255,42 @@ class PaginaThumbnailView(View):
             return response
         except Exception:
             raise Http404
+
+
+class PaginaFileView(View):
+    """
+    Retorna la página individual del PDF en formato PDF (inline) para visualización en navegador o iframe.
+    """
+    def get(self, request, pagina_id):
+        unidad = getattr(request, 'unidad', None)
+        qs = Pagina.objects.filter(id=pagina_id)
+        if unidad is not None:
+            qs = qs.filter(unidad=unidad)
+        pagina = qs.first()
+        if not pagina:
+            raise Http404
+
+        storage = MinIOService()
+        try:
+            pdf_bytes = storage.get_file(pagina.pdf_origen)
+            pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            page_index = pagina.nro_pagina_en_pdf - 1
+
+            if page_index < 0 or page_index >= len(pdf_doc):
+                pdf_doc.close()
+                raise Http404
+
+            pdf_page = fitz.open()
+            pdf_page.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+            page_bytes = pdf_page.tobytes()
+
+            pdf_page.close()
+            pdf_doc.close()
+
+            response = HttpResponse(page_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="pagina_{pagina.nro_pagina_en_pdf}.pdf"'
+            response['X-Frame-Options'] = 'SAMEORIGIN'
+            return response
+        except Exception:
+            raise Http404
+

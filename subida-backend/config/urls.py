@@ -7,7 +7,7 @@ from config.schema import schema
 from apps.documentos.views import (
     UploadPDFView, UploadBatchPDFView,
     DocumentoFileView, DocumentoOriginalView, DocumentoThumbnailView,
-    PaginaThumbnailView,
+    PaginaThumbnailView, PaginaFileView,
 )
 
 from apps.users.tokens import validar_token
@@ -42,4 +42,5 @@ urlpatterns = [
     path('api/documents/<int:doc_id>/original/', DocumentoOriginalView.as_view(), name='doc-original'),
     path('api/documents/<int:doc_id>/thumbnail/', DocumentoThumbnailView.as_view(), name='doc-thumbnail'),
     path('api/paginas/<int:pagina_id>/thumbnail/', PaginaThumbnailView.as_view(), name='pagina-thumbnail'),
+    path('api/paginas/<int:pagina_id>/file/', PaginaFileView.as_view(), name='pagina-file'),
 ]

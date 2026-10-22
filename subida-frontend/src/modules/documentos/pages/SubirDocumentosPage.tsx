@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { ROUTES } from '@config/routes'
+import { useAuth } from '@/contexts/AuthContext'
 import { FileDropzone } from '../components/FileDropzone/FileDropzone'
 import { UploadQueue } from '../components/UploadQueue/UploadQueue'
 import { UploadProgress } from '../components/UploadProgress/UploadProgress'
@@ -16,9 +17,11 @@ import {
 
 export function SubirDocumentosPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [files, setFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [resultado, setResultado] = useState<ResultadoBatch | null>(null)
+  const [nonPdfError, setNonPdfError] = useState<string | null>(null)
 
   // Estados para carga progresiva
   const [progresoLista, setProgresoLista] = useState<ProgresoArchivo[]>([])
@@ -26,7 +29,18 @@ export function SubirDocumentosPage() {
   const [faseActual, setFaseActual] = useState<string>('')
 
   const addFiles = (newFiles: FileList | File[]) => {
-    const pdfFiles = Array.from(newFiles).filter(
+    setNonPdfError(null)
+    const arrayFiles = Array.from(newFiles)
+    const invalidFiles = arrayFiles.filter(
+      (file) => file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')
+    )
+    if (invalidFiles.length > 0) {
+      setNonPdfError(
+        `Se descartaron ${invalidFiles.length} archivo(s) porque solo se admiten documentos en formato PDF.`
+      )
+    }
+
+    const pdfFiles = arrayFiles.filter(
       (file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     )
     setFiles((prev) => [...prev, ...pdfFiles])
@@ -40,6 +54,7 @@ export function SubirDocumentosPage() {
     setFiles([])
     setResultado(null)
     setProgresoLista([])
+    setNonPdfError(null)
   }
 
   const handleUpload = async () => {
@@ -47,6 +62,7 @@ export function SubirDocumentosPage() {
 
     setUploading(true)
     setResultado(null)
+    setNonPdfError(null)
 
     const listaInicial: ProgresoArchivo[] = files.map((f) => ({
       archivo: f.name,
@@ -54,8 +70,7 @@ export function SubirDocumentosPage() {
     }))
     setProgresoLista(listaInicial)
 
-    const userStr = localStorage.getItem('user')
-    const userId = userStr ? JSON.parse(userStr)?.id : null
+    const userId = user?.id ? Number(user.id) : null
 
     let procesadosTotal = 0
     let paginasTotal = 0
@@ -160,6 +175,20 @@ export function SubirDocumentosPage() {
           </Button>
         )}
       </div>
+
+      {nonPdfError && (
+        <div className="p-3.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-center justify-between">
+          <span>{nonPdfError}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setNonPdfError(null)}
+            className="h-7 text-xs text-destructive hover:bg-destructive/20"
+          >
+            Cerrar
+          </Button>
+        </div>
+      )}
 
       {/* Zona de arrastrar y soltar */}
       <FileDropzone onFilesAdded={addFiles} disabled={uploading} />

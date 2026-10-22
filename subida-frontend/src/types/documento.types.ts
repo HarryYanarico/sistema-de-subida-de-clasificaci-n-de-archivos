@@ -16,15 +16,10 @@ export type EstadoDocumento =
 export interface EntradaHistorial {
   fecha?: string
   usuario?: string | null
-  estado_anterior?: EstadoDocumento | string
   estadoAnterior?: EstadoDocumento | string
-  tipo_anterior?: string | null
   tipoAnterior?: string | null
-  tipo_nuevo?: string | null
   tipoNuevo?: string | null
-  score_anterior?: number | null
   scoreAnterior?: number | null
-  keywords_anteriores?: string[] | null
   keywordsAnteriores?: string[] | null
 }
 
@@ -78,34 +73,109 @@ export interface Lote {
 export interface Documento {
   id: number
   persona?: Persona | null
-
-  tipo_documento?: TipoDocumento | null
   tipoDocumento?: TipoDocumento | null
-  archivo_original?: string
   archivoOriginal?: string
   archivoNombre?: string
-  archivo_nombre?: string
-  pagina_numero?: number
   paginaNumero?: number
-  texto_extraido?: string
   textoExtraido?: string
   estado: EstadoDocumento | string
   score?: number | null
-  keywords_matcheadas?: string[]
   keywordsMatcheadas?: string[]
-  historial_clasificacion?: EntradaHistorial[]
-  historialReclasificaciones?: EntradaHistorial[] | any[]
+  historialReclasificaciones?: EntradaHistorial[]
   phash?: string | null
-  duplicado_de?: string | null | any
   duplicadoDe?: Documento | null
-  created_at?: string
   createdAt?: string
-  // Nuevos campos Fase 2:
   lote?: Lote | null
   paginas?: Pagina[]
   esDobleCara?: boolean
   nombreFinal?: string
   totalPaginas?: number
+}
+
+/**
+ * Adaptador centralizado para normalizar entradas de historial snake_case o camelCase.
+ */
+export function adaptEntradaHistorial(raw: any): EntradaHistorial {
+  if (!raw) return {}
+  return {
+    fecha: raw.fecha,
+    usuario: raw.usuario,
+    estadoAnterior: raw.estadoAnterior ?? raw.estado_anterior,
+    tipoAnterior: raw.tipoAnterior ?? raw.tipo_anterior,
+    tipoNuevo: raw.tipoNuevo ?? raw.tipo_nuevo,
+    scoreAnterior: raw.scoreAnterior ?? raw.score_anterior,
+    keywordsAnteriores: raw.keywordsAnteriores ?? raw.keywords_anteriores,
+  }
+}
+
+/**
+ * Adaptador centralizado para normalizar respuestas del backend a la interfaz Documento unificada.
+ */
+export function adaptDocumento(raw: any): Documento {
+  if (!raw) return {} as Documento
+  return {
+    id: raw.id,
+    persona: raw.persona,
+    tipoDocumento: raw.tipoDocumento ?? raw.tipo_documento,
+    archivoOriginal: raw.archivoOriginal ?? raw.archivo_original,
+    archivoNombre: raw.archivoNombre ?? raw.archivo_nombre ?? raw.nombreArchivoOriginal,
+    paginaNumero: raw.paginaNumero ?? raw.pagina_numero,
+    textoExtraido: raw.textoExtraido ?? raw.texto_extraido,
+    estado: raw.estado,
+    score: raw.score,
+    keywordsMatcheadas: raw.keywordsMatcheadas ?? raw.keywords_matcheadas ?? [],
+    historialReclasificaciones: (raw.historialReclasificaciones ?? raw.historial_clasificacion ?? []).map(adaptEntradaHistorial),
+    phash: raw.phash,
+    duplicadoDe: raw.duplicadoDe ?? raw.duplicado_de,
+    createdAt: raw.createdAt ?? raw.created_at,
+    lote: raw.lote ? adaptLote(raw.lote) : undefined,
+    paginas: raw.paginas ? raw.paginas.map(adaptPagina) : undefined,
+    esDobleCara: raw.esDobleCara ?? raw.es_doble_cara,
+    nombreFinal: raw.nombreFinal ?? raw.nombre_final,
+    totalPaginas: raw.totalPaginas ?? raw.total_paginas,
+  }
+}
+
+/**
+ * Adaptador centralizado para normalizar páginas.
+ */
+export function adaptPagina(raw: any): Pagina {
+  if (!raw) return {} as Pagina
+  return {
+    id: raw.id,
+    loteId: raw.loteId ?? raw.lote_id,
+    loteNombre: raw.loteNombre ?? raw.lote_nombre,
+    pdfOrigen: raw.pdfOrigen ?? raw.pdf_origen,
+    nroPaginaEnPdf: raw.nroPaginaEnPdf ?? raw.nro_pagina_en_pdf,
+    textoOcr: raw.textoOcr ?? raw.texto_ocr ?? '',
+    firmaPalabras: raw.firmaPalabras ?? raw.firma_palabras,
+    firmaEstructura: raw.firmaEstructura ?? raw.firma_estructura,
+    phash: raw.phash,
+    descartable: raw.descartable,
+    grupo: raw.grupo,
+    estado: raw.estado,
+    createdAt: raw.createdAt ?? raw.created_at,
+  }
+}
+
+/**
+ * Adaptador centralizado para normalizar lotes.
+ */
+export function adaptLote(raw: any): Lote {
+  if (!raw) return {} as Lote
+  return {
+    id: raw.id,
+    estado: raw.estado,
+    nombreArchivoOriginal: raw.nombreArchivoOriginal ?? raw.nombre_archivo_original,
+    totalPaginas: raw.totalPaginas ?? raw.total_paginas,
+    totalGrupos: raw.totalGrupos ?? raw.total_grupos,
+    persona: raw.persona,
+    grupos: raw.grupos,
+    paginas: raw.paginas ? raw.paginas.map(adaptPagina) : undefined,
+    documentos: raw.documentos ? raw.documentos.map(adaptDocumento) : undefined,
+    parejasSugeridas: raw.parejasSugeridas ?? raw.parejas_sugeridas,
+    createdAt: raw.createdAt ?? raw.created_at,
+  }
 }
 
 export interface DocumentoByPersona {

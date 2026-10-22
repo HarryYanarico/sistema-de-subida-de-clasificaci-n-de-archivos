@@ -1,7 +1,7 @@
 import { ResultadoBatch } from '../types/documentos.types'
-import { authService } from '@modules/auth/services/auth.service'
+import { env } from '@config/environment'
 
-export { extraerCodigo, esCodigoValido } from '@/utils/validators'
+export { extraerCodigo, esCodigoValido, sanitizarNombreTipoDocumento } from '@/utils/validators'
 
 /**
  * Retorna la URL del archivo PDF en el backend.
@@ -18,6 +18,13 @@ export function getPaginaThumbnailUrl(paginaId: number | string): string {
 }
 
 /**
+ * Retorna la URL del archivo PDF de una página individual del lote.
+ */
+export function getPaginaPdfUrl(paginaId: number | string): string {
+  return `/api/paginas/${paginaId}/file/`
+}
+
+/**
  * Abre una ventana con el archivo PDF y dispara la acción de impresión.
  */
 export function printDocument(documentoId: number): void {
@@ -31,11 +38,12 @@ export function printDocument(documentoId: number): void {
 
 /**
  * Envía un archivo PDF al endpoint de subida por lote del backend.
+ * Requiere credentials: 'include' para enviar la cookie HTTP-only de sesión (admincentral_access_token).
  */
 export async function uploadBatchFile(
   file: File,
-  userId?: number | null,
-  personaId?: number | null
+  userId?: number | string | null,
+  personaId?: number | string | null
 ): Promise<ResultadoBatch> {
   const formData = new FormData()
   if (userId) {
@@ -46,17 +54,19 @@ export async function uploadBatchFile(
   }
   formData.append('pdfs', file)
 
-  const headers: Record<string, string> = {}
-  const token = authService.getToken()
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
   const response = await fetch('/api/upload/batch/', {
     method: 'POST',
-    headers,
+    credentials: 'include',
     body: formData,
   })
+
+  if (response.status === 401) {
+    const loginUrl = env.admincentralLoginUrl || '/login'
+    if (window.location.pathname !== '/login' && !window.location.href.includes(loginUrl)) {
+      window.location.href = loginUrl
+    }
+    throw new Error('Sesión expirada o no autenticado. Redirigiendo a inicio de sesión...')
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => null)
