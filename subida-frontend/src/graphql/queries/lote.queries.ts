@@ -21,6 +21,7 @@ export const GET_LOTE = gql`
       nombreArchivoOriginal
       totalPaginas
       totalGrupos
+      borradorAgrupamiento
       createdAt
       persona {
         id
@@ -50,6 +51,7 @@ export const GET_LOTE = gql`
         }
         paginas {
           id
+          pdfOrigen
           nroPaginaEnPdf
           textoOcr
           phash
@@ -59,6 +61,7 @@ export const GET_LOTE = gql`
       }
       paginas {
         id
+        pdfOrigen
         nroPaginaEnPdf
         textoOcr
         phash
@@ -75,6 +78,54 @@ export const GET_LOTE = gql`
           id
           nroPaginaEnPdf
         }
+      }
+    }
+  }
+`
+
+export const GET_LOTE_REVISION = gql`
+  query GetLoteRevision($loteId: ID!) {
+    loteRevision(loteId: $loteId) {
+      lote {
+        id
+        estado
+        nombreArchivoOriginal
+        totalPaginas
+        totalGrupos
+        persona {
+          id
+          codigo
+          nombres
+          apellidos
+        }
+      }
+      documentosIncompletos {
+        id
+        nombreFinal
+        esDobleCara
+        totalPaginas
+        estado
+        historialClasificacion
+        tipoDocumento {
+          id
+          nombre
+          color
+        }
+        paginas {
+          id
+          pdfOrigen
+          nroPaginaEnPdf
+          textoOcr
+          estado
+        }
+      }
+      paginasHuerfanas {
+        id
+        pdfOrigen
+        nroPaginaEnPdf
+        textoOcr
+        phash
+        estado
       }
     }
   }

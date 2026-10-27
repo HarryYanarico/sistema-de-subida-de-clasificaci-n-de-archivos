@@ -20,8 +20,10 @@ export const ROUTES = {
   // Módulo de Lotes y Agrupamiento
   LOTES: {
     ROOT: '/lotes',
-    AGRUPAR: (id: string | number = ':loteId') => `/lotes/${id}/agrupar`,
+    AGRUPAR: (id: string | number = ':loteId') => `/lotes/${id}/grupos`,
+    GRUPOS: (id: string | number = ':loteId') => `/lotes/${id}/grupos`,
     DETALLE: (id: string | number = ':loteId') => `/lotes/${id}`,
+    REVISION: (id: string | number = ':loteId') => `/lotes/${id}/revision`,
   },
 
   // Módulo de Colas de Revisión Humana

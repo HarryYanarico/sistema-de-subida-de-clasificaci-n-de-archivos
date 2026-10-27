@@ -144,6 +144,10 @@ class LoteType:
     persona: Optional[PersonaType]
 
     @strawberry_django.field
+    def borrador_agrupamiento(self) -> strawberry.scalars.JSON:
+        return self.borrador_agrupamiento or {}
+
+    @strawberry_django.field
     def grupos(self) -> list[GrupoType]:
         return list(self.grupos.all().order_by('id'))
 
@@ -238,6 +242,13 @@ class EstadisticasDigitalizacionType:
     total_pendientes: int
     tasa_efectividad: float
     sugerencias_pendientes: int
+
+
+@strawberry.type
+class LoteRevisionType:
+    lote: LoteType
+    documentos_incompletos: list[DocumentoType]
+    paginas_huerfanas: list[PaginaType]
 
 
 def _paginar(qs, limit: Optional[int], offset: Optional[int] = None):
@@ -484,6 +495,42 @@ class Query:
         try:
             unidad = get_unidad_from_info(info)
             return Lote.objects.filter(id=int(id), unidad=unidad).first()
+        except Exception:
+            return None
+
+    @strawberry.field
+    def lote_revision(
+        self,
+        info: strawberry.types.Info,
+        lote_id: strawberry.ID,
+    ) -> Optional[LoteRevisionType]:
+        """Devuelve los documentos incompletos y las páginas huérfanas de un lote para la pantalla de revisión."""
+        from apps.core.tenancy import get_unidad_from_info
+        try:
+            unidad = get_unidad_from_info(info)
+            lote = Lote.objects.filter(id=int(str(lote_id)), unidad=unidad).first()
+            if not lote:
+                return None
+
+            incompletos = list(Documento.objects.filter(lote=lote, unidad=unidad, estado='incompleto').order_by('id'))
+
+            # Páginas del lote que no están en documentos activos (o están en estado sin_agrupar)
+            paginas_en_docs = Documento.objects.filter(
+                lote=lote, unidad=unidad
+            ).exclude(estado='descartado').values_list('paginas__id', flat=True)
+
+            huerfanas = list(
+                Pagina.objects.filter(lote=lote, unidad=unidad)
+                .exclude(id__in=paginas_en_docs)
+                .exclude(descartable=True)
+                .order_by('nro_pagina_en_pdf')
+            )
+
+            return LoteRevisionType(
+                lote=lote,
+                documentos_incompletos=incompletos,
+                paginas_huerfanas=huerfanas,
+            )
         except Exception:
             return None
 

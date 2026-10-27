@@ -9,7 +9,7 @@ from apps.personas.models import Persona
 from apps.documentos.models import Documento, Pagina
 from apps.documentos.deduplicacion import buscar_duplicado
 from apps.storage.clasificador import estado_desde_pagina
-from apps.storage.ingesta import procesar_ingesta, procesar_ingesta_lote
+from apps.storage.ingesta import procesar_ingesta, procesar_ingesta_lote, procesar_ingesta_lote_multiple
 from apps.storage.pdf_processor import PDFProcessor
 from apps.storage.services import MinIOService
 
@@ -97,41 +97,161 @@ class UploadBatchPDFView(View):
                 return JsonResponse({'success': False, 'message': 'No se enviaron archivos'}, status=400)
 
             persona_id = request.POST.get('persona_id')
-            procesados = 0
-            total_paginas = 0
-            errores = []
-            detalles = []
-
             unidad = getattr(request, 'unidad', None)
             usuario = request.user if getattr(request, 'user', None) and request.user.is_authenticated else _get_user_from_request(request)
 
-            for pdf_file in files:
-                ok, resultado = procesar_ingesta_lote(
-                    pdf_file.name, pdf_file.read(), usuario, unidad=unidad, persona_id=persona_id
-                )
+            archivos = [(f.name, f.read()) for f in files]
+            ok, resultado = procesar_ingesta_lote_multiple(
+                archivos, usuario, unidad=unidad, persona_id=persona_id
+            )
 
-                if ok:
-                    procesados += 1
-                    total_paginas += resultado.get('total_paginas', resultado.get('paginas', 0))
-                    detalles.append(resultado)
-                else:
-                    errores.append({
-                        'archivo': pdf_file.name,
-                        'error': resultado['error'],
-                    })
-
-            primer_lote_id = detalles[0].get('lote_id') if detalles else None
+            if not ok:
+                return JsonResponse({'success': False, 'message': resultado.get('error', 'Error al procesar lote')}, status=400)
 
             return JsonResponse({
-                'success': len(errores) == 0,
+                'success': True,
                 'total_archivos': len(files),
-                'procesados': procesados,
-                'total_paginas': total_paginas,
-                'lote_id': primer_lote_id,
-                'errores': errores,
-                'detalles': detalles,
+                'procesados': len(files),
+                'total_paginas': resultado.get('total_paginas', 0),
+                'total_grupos': resultado.get('total_grupos', 0),
+                'lote_id': resultado.get('lote_id'),
+                'detalles': [resultado],
+                'errores': [],
             })
 
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class IniciarLoteView(View):
+    def post(self, request):
+        try:
+            from apps.personas.models import Persona
+            persona_id = request.POST.get('persona_id')
+            persona = Persona.objects.filter(id=persona_id).first() if persona_id else None
+            unidad = getattr(request, 'unidad', None)
+            usuario = request.user if getattr(request, 'user', None) and request.user.is_authenticated else _get_user_from_request(request)
+
+            from .models import Lote
+            lote = Lote.objects.create(
+                unidad=unidad,
+                subido_por=usuario,
+                persona=persona,
+                nombre_archivo_original="Lote en procesamiento",
+                estado='procesando',
+                total_paginas=0,
+                total_grupos=0,
+            )
+            return JsonResponse({'success': True, 'lote_id': lote.id})
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class UploadLotePDFView(View):
+    def post(self, request, lote_id):
+        try:
+            from .models import Lote, Pagina
+            from apps.storage.services import MinIOService
+            from apps.storage.pdf_processor import PDFProcessor
+            from .agrupador import extraer_firma
+            import fitz
+
+            lote = Lote.objects.filter(id=lote_id).first()
+            if not lote:
+                return JsonResponse({'success': False, 'message': 'Lote no encontrado'}, status=404)
+
+            archivo = request.FILES.get('pdf')
+            if not archivo:
+                return JsonResponse({'success': False, 'message': 'No se envió ningún PDF'}, status=400)
+
+            contenido = archivo.read()
+            storage = MinIOService()
+            cod_folder = lote.persona.codigo if lote.persona else f"unidad_{getattr(lote.unidad, 'codigo', 'general')}"
+            pdf_key = storage.upload_pdf(cod_folder, archivo.name, contenido)
+
+            pdf_doc = fitz.open(stream=contenido, filetype="pdf")
+            paginas_creadas = []
+            for page_num in range(len(pdf_doc)):
+                page = pdf_doc.load_page(page_num)
+                text = page.get_text() or ""
+                phash_val = PDFProcessor._calcular_phash(page)
+                pag = Pagina(
+                    unidad=lote.unidad,
+                    lote=lote,
+                    pdf_origen=pdf_key,
+                    nro_pagina_en_pdf=page_num + 1,
+                    texto_ocr=text,
+                    phash=phash_val,
+                    estado='pendiente',
+                )
+                extraer_firma(pag)
+                pag.save()
+                paginas_creadas.append(pag)
+            pdf_doc.close()
+
+            lote.total_paginas = (lote.total_paginas or 0) + len(paginas_creadas)
+            if lote.nombre_archivo_original == "Lote en procesamiento":
+                lote.nombre_archivo_original = archivo.name
+            lote.save(update_fields=['total_paginas', 'nombre_archivo_original'])
+
+            return JsonResponse({
+                'success': True,
+                'archivo': archivo.name,
+                'paginas_en_pdf': len(paginas_creadas),
+                'total_paginas_lote': lote.total_paginas,
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AgruparLoteView(View):
+    def post(self, request, lote_id):
+        try:
+            from .models import Lote, Pagina, Grupo, TipoDocumento
+            from .agrupador import agrupar, comparar_con_tipos
+
+            lote = Lote.objects.filter(id=lote_id).first()
+            if not lote:
+                return JsonResponse({'success': False, 'message': 'Lote no encontrado'}, status=404)
+
+            paginas = list(Pagina.objects.filter(lote=lote, estado='pendiente'))
+            if not paginas:
+                return JsonResponse({'success': False, 'message': 'El lote no contiene páginas para agrupar'}, status=400)
+
+            grupos_res = agrupar(paginas)
+            tipos_existentes = list(TipoDocumento.objects.filter(unidad=lote.unidad, activo=True)) if lote.unidad else list(TipoDocumento.objects.filter(activo=True))
+
+            for gr in grupos_res:
+                tipo_sugerido = comparar_con_tipos(gr, tipos_existentes)
+                estado_grupo = 'coincide_con_tipo' if tipo_sugerido else 'nuevo'
+
+                grupo_db = Grupo.objects.create(
+                    unidad=lote.unidad,
+                    lote=lote,
+                    firma_consolidada=gr.firma_consolidada,
+                    total_paginas=gr.total_paginas,
+                    tipo_documento_sugerido=tipo_sugerido,
+                    estado=estado_grupo,
+                )
+
+                for p in gr.paginas:
+                    p.grupo = grupo_db
+                    p.estado = 'agrupada'
+                    p.save(update_fields=['grupo', 'estado'])
+
+            lote.total_grupos = len(grupos_res)
+            lote.estado = 'pendiente_nombres'
+            lote.save(update_fields=['total_grupos', 'estado'])
+
+            return JsonResponse({
+                'success': True,
+                'lote_id': lote.id,
+                'total_paginas': lote.total_paginas,
+                'total_grupos': lote.total_grupos,
+            })
         except Exception as e:
             return JsonResponse({'success': False, 'message': str(e)}, status=500)
 

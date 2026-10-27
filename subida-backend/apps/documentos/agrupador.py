@@ -228,15 +228,16 @@ def _obtener_phash(f: Any) -> Optional[str]:
 
 
 def similitud_palabras(f1: Any, f2: Any) -> float:
-    """Coeficiente de Jaccard sobre las top-20 palabras."""
+    """Coeficiente de Dice sobre las palabras clave para capturar similitud de plantilla."""
     palabras_1 = set(_obtener_palabras(f1))
     palabras_2 = set(_obtener_palabras(f2))
     if not palabras_1 and not palabras_2:
         return 0.0
-    union = palabras_1 | palabras_2
-    if not union:
+    inter = len(palabras_1 & palabras_2)
+    if inter == 0:
         return 0.0
-    return len(palabras_1 & palabras_2) / len(union)
+    total_tokens = len(palabras_1) + len(palabras_2)
+    return round((2.0 * inter) / total_tokens, 4)
 
 
 def similitud_estructura(f1: Any, f2: Any) -> float:
@@ -365,7 +366,7 @@ def _construir_firma_consolidada(paginas_grupo: list[Any]) -> dict[str, Any]:
 
 def agrupar(
     paginas: list[Any],
-    umbral: float = 0.6,
+    umbral: float = 0.38,
     paginas_confirmadas: Optional[list[Any]] = None,
 ) -> list[GrupoResultado]:
     """Agrupa páginas por similitud estadística usando agrupamiento aglomerativo jerárquico.

@@ -82,6 +82,10 @@ class Lote(models.Model):
     nombre_archivo_original = models.CharField(max_length=500, blank=True, default='')
     total_paginas = models.IntegerField(default=0)
     total_grupos = models.IntegerField(default=0)
+    borrador_agrupamiento = models.JSONField(
+        default=dict, blank=True,
+        help_text="Estado del borrador interactivo de slots y asignaciones de grupos"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -198,6 +202,7 @@ class Documento(models.Model):
     ESTADO_CHOICES = [
         ('pendiente', 'Pendiente'),
         ('confirmado', 'Confirmado'),
+        ('incompleto', 'Incompleto'),
         ('verificado', 'Verificado'),
         # Conservados para retrocompatibilidad con registros existentes
         ('clasificado', 'Clasificado'),
