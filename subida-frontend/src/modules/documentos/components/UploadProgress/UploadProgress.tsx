@@ -17,7 +17,7 @@ export function UploadProgress({
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            Digitalizando y Clasificando Documentos...
+            Digitalizando y Agrupando Páginas por Similitud...
           </CardTitle>
           <span className="text-sm font-semibold">{porcentaje}%</span>
         </div>

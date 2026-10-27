@@ -6,6 +6,7 @@ from strawberry.django.views import GraphQLView
 from config.schema import schema
 from apps.documentos.views import (
     UploadPDFView, UploadBatchPDFView,
+    IniciarLoteView, UploadLotePDFView, AgruparLoteView,
     DocumentoFileView, DocumentoOriginalView, DocumentoThumbnailView,
     PaginaThumbnailView, PaginaFileView,
 )
@@ -38,6 +39,9 @@ urlpatterns = [
     ),
     path('api/upload/', csrf_exempt(UploadPDFView.as_view()), name='upload-pdf'),
     path('api/upload/batch/', csrf_exempt(UploadBatchPDFView.as_view()), name='upload-batch-pdf'),
+    path('api/upload/iniciar-lote/', csrf_exempt(IniciarLoteView.as_view()), name='iniciar-lote'),
+    path('api/upload/lote/<int:lote_id>/pdf/', csrf_exempt(UploadLotePDFView.as_view()), name='upload-lote-pdf'),
+    path('api/upload/lote/<int:lote_id>/agrupar/', csrf_exempt(AgruparLoteView.as_view()), name='agrupar-lote'),
     path('api/documents/<int:doc_id>/file/', DocumentoFileView.as_view(), name='doc-file'),
     path('api/documents/<int:doc_id>/original/', DocumentoOriginalView.as_view(), name='doc-original'),
     path('api/documents/<int:doc_id>/thumbnail/', DocumentoThumbnailView.as_view(), name='doc-thumbnail'),

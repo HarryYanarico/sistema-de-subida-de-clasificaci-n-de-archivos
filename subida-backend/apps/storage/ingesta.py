@@ -144,24 +144,33 @@ def procesar_ingesta(nombre, contenido, usuario, unidad=None, processor=None):
 
 
 def procesar_ingesta_lote(nombre, contenido, usuario, unidad=None, persona_id=None):
+    """Procesa un único archivo PDF delegando en procesar_ingesta_lote_multiple."""
+    return procesar_ingesta_lote_multiple([(nombre, contenido)], usuario, unidad=unidad, persona_id=persona_id)
+
+
+def procesar_ingesta_lote_multiple(archivos: list[tuple[str, bytes]], usuario, unidad=None, persona_id=None):
     """
-    Procesa un archivo PDF en el paradigma determinista de Lotes y Grupos:
-    1. Valida tamaño del archivo.
+    Procesa múltiples archivos PDF en un único Lote contenedor:
+    1. Valida el tamaño de cada archivo.
     2. Resuelve la unidad multi-tenant.
-    3. Resuelve persona de forma flexible (opcionalmente por ID o detectada por nombre).
-    4. Sube el PDF original a MinIO.
-    5. Crea el Lote con estado 'pendiente_nombres'.
-    6. Divide el PDF en páginas (PyMuPDF), computando texto OCR, miniatura y pHash.
-    7. Agrupa las páginas con el motor estadístico de firmas (agrupador.agrupar).
-    8. Compara cada grupo contra tipos existentes (comparar_con_tipos).
+    3. Resuelve persona de forma flexible (si aplica).
+    4. Sube cada PDF original a MinIO.
+    5. Crea UN SOLO registro Lote contenedor para toda la tanda.
+    6. Divide cada PDF en páginas (PyMuPDF) computando OCR y pHash.
+    7. Agrupa TODAS las páginas de todos los PDFs del lote en un único clustering.
+    8. Compara cada grupo contra tipos existentes.
     9. Crea los registros Grupo y asigna las Pagina correspondientes.
-    10. Retorna lote_id, total_paginas, total_grupos y datos de persona si aplica.
+    10. Retorna lote_id, total_paginas, total_grupos.
     """
-    if len(contenido) > TAMANO_MAXIMO_PDF:
-        return False, {
-            'error': f'Archivo demasiado grande ({len(contenido) // (1024 * 1024)} MB, '
-                     f'máximo {TAMANO_MAXIMO_PDF // (1024 * 1024)} MB)'
-        }
+    if not archivos:
+        return False, {'error': 'No se enviaron archivos para procesar'}
+
+    for nombre, contenido in archivos:
+        if len(contenido) > TAMANO_MAXIMO_PDF:
+            return False, {
+                'error': f'El archivo {nombre} es demasiado grande ({len(contenido) // (1024 * 1024)} MB, '
+                         f'máximo {TAMANO_MAXIMO_PDF // (1024 * 1024)} MB)'
+            }
 
     if unidad is None and usuario is not None:
         unidad = getattr(usuario, 'unidad', None)
@@ -180,9 +189,11 @@ def procesar_ingesta_lote(nombre, contenido, usuario, unidad=None, persona_id=No
             persona = None
 
     if not persona:
-        p, _, _ = resolver_persona(nombre, unidad=unidad)
-        if p:
-            persona = p
+        for nom, _ in archivos:
+            p, _, _ = resolver_persona(nom, unidad=unidad)
+            if p:
+                persona = p
+                break
 
     from apps.documentos.models import Lote, Grupo, Pagina, TipoDocumento
     from apps.documentos.agrupador import agrupar, comparar_con_tipos, extraer_firma
@@ -191,42 +202,45 @@ def procesar_ingesta_lote(nombre, contenido, usuario, unidad=None, persona_id=No
 
     storage = MinIOService()
     codigo_folder = persona.codigo if persona else f"unidad_{getattr(unidad, 'codigo', 'general')}"
-    pdf_key = storage.upload_pdf(codigo_folder, nombre, contenido)
 
-    # 1. Crear registro Lote
+    nombre_lote = archivos[0][0] if len(archivos) == 1 else f"{len(archivos)} PDFs ({archivos[0][0]}, ...)"
+
     lote = Lote.objects.create(
         unidad=unidad,
         subido_por=usuario,
         persona=persona,
-        nombre_archivo_original=nombre,
+        nombre_archivo_original=nombre_lote,
         estado='pendiente_nombres',
     )
 
     try:
-        pdf_doc = fitz.open(stream=contenido, filetype="pdf")
         paginas_creadas = []
 
-        for page_num in range(len(pdf_doc)):
-            page = pdf_doc.load_page(page_num)
-            text = page.get_text() or ""
-            phash_val = PDFProcessor._calcular_phash(page)
+        for nombre_archivo, contenido_archivo in archivos:
+            pdf_key = storage.upload_pdf(codigo_folder, nombre_archivo, contenido_archivo)
+            pdf_doc = fitz.open(stream=contenido_archivo, filetype="pdf")
 
-            pag = Pagina(
-                unidad=unidad,
-                lote=lote,
-                pdf_origen=pdf_key,
-                nro_pagina_en_pdf=page_num + 1,
-                texto_ocr=text,
-                phash=phash_val,
-                estado='pendiente',
-            )
-            extraer_firma(pag)
-            pag.save()
-            paginas_creadas.append(pag)
+            for page_num in range(len(pdf_doc)):
+                page = pdf_doc.load_page(page_num)
+                text = page.get_text() or ""
+                phash_val = PDFProcessor._calcular_phash(page)
 
-        pdf_doc.close()
+                pag = Pagina(
+                    unidad=unidad,
+                    lote=lote,
+                    pdf_origen=pdf_key,
+                    nro_pagina_en_pdf=page_num + 1,
+                    texto_ocr=text,
+                    phash=phash_val,
+                    estado='pendiente',
+                )
+                extraer_firma(pag)
+                pag.save()
+                paginas_creadas.append(pag)
 
-        # 2. Agrupamiento jerárquico determinista
+            pdf_doc.close()
+
+        # Agrupamiento jerárquico determinista de TODAS las páginas de todos los PDFs
         grupos_res = agrupar(paginas_creadas)
         tipos_existentes = list(TipoDocumento.objects.filter(unidad=unidad, activo=True))
 
@@ -253,7 +267,7 @@ def procesar_ingesta_lote(nombre, contenido, usuario, unidad=None, persona_id=No
         lote.save(update_fields=['total_paginas', 'total_grupos'])
 
         return True, {
-            'archivo': nombre,
+            'archivo': nombre_lote,
             'lote_id': lote.id,
             'total_paginas': lote.total_paginas,
             'total_grupos': lote.total_grupos,

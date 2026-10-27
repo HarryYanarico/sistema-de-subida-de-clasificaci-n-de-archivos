@@ -7,12 +7,10 @@ import { FileDropzone } from '../components/FileDropzone/FileDropzone'
 import { UploadQueue } from '../components/UploadQueue/UploadQueue'
 import { UploadProgress } from '../components/UploadProgress/UploadProgress'
 import { UploadResultSummary } from '../components/UploadResultSummary/UploadResultSummary'
-import { uploadBatchFile } from '../services/upload.service'
+import { uploadSequentialBatch } from '../services/upload.service'
 import {
   ResultadoBatch,
   ProgresoArchivo,
-  DetalleArchivo,
-  ErrorArchivo,
 } from '../types/documentos.types'
 
 export function SubirDocumentosPage() {
@@ -23,10 +21,10 @@ export function SubirDocumentosPage() {
   const [resultado, setResultado] = useState<ResultadoBatch | null>(null)
   const [nonPdfError, setNonPdfError] = useState<string | null>(null)
 
-  // Estados para carga progresiva
+  // Estados para carga progresiva en 2 dimensiones
   const [progresoLista, setProgresoLista] = useState<ProgresoArchivo[]>([])
-  const [archivoActualIndex, setArchivoActualIndex] = useState<number>(-1)
   const [faseActual, setFaseActual] = useState<string>('')
+  const [porcentajeProgreso, setPorcentajeProgreso] = useState<number>(0)
 
   const addFiles = (newFiles: FileList | File[]) => {
     setNonPdfError(null)
@@ -54,6 +52,8 @@ export function SubirDocumentosPage() {
     setFiles([])
     setResultado(null)
     setProgresoLista([])
+    setFaseActual('')
+    setPorcentajeProgreso(0)
     setNonPdfError(null)
   }
 
@@ -64,101 +64,71 @@ export function SubirDocumentosPage() {
     setResultado(null)
     setNonPdfError(null)
 
-    const listaInicial: ProgresoArchivo[] = files.map((f) => ({
+    const listaInicial: ProgresoArchivo[] = files.map((f, idx) => ({
       archivo: f.name,
-      estado: 'pendiente',
+      estado: idx === 0 ? 'procesando' : 'pendiente',
     }))
     setProgresoLista(listaInicial)
+    setPorcentajeProgreso(5)
+    setFaseActual(`Iniciando digitalización de ${files.length} archivo(s)...`)
 
     const userId = user?.id ? Number(user.id) : null
 
-    let procesadosTotal = 0
-    let paginasTotal = 0
-    const detalles: DetalleArchivo[] = []
-    const errores: ErrorArchivo[] = []
+    try {
+      const data = await uploadSequentialBatch(files, userId, null, (prog) => {
+        setPorcentajeProgreso(prog.porcentaje)
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      setArchivoActualIndex(i)
-      setFaseActual(`Procesando archivo ${i + 1} de ${files.length}: ${file.name}`)
-
-      setProgresoLista((prev) =>
-        prev.map((item, idx) => (idx === i ? { ...item, estado: 'procesando' } : item))
-      )
-
-      try {
-        const data = await uploadBatchFile(file, userId)
-
-        if (data.detalles && data.detalles.length > 0) {
-          const det = data.detalles[0]
-          procesadosTotal += 1
-          paginasTotal += det.total_paginas || det.paginas || 0
-          detalles.push(det)
-
+        if (prog.fase === 'subiendo') {
+          setFaseActual(`Subiendo archivo ${prog.archivoActual} de ${prog.totalArchivos}: ${prog.nombreArchivoActual}`)
           setProgresoLista((prev) =>
-            prev.map((item, idx) =>
-              idx === i
-                ? {
-                    ...item,
-                    estado: 'completado',
-                    lote_id: det.lote_id,
-                    total_grupos: det.total_grupos,
-                    paginas: det.total_paginas || det.paginas,
-                    persona_codigo: det.persona_codigo,
-                    persona_nombre: det.persona_nombre,
-                    persona_id: det.persona_id,
-                  }
-                : item
-            )
+            prev.map((item, idx) => {
+              if (idx < prog.archivoActual - 1) return { ...item, estado: 'completado' }
+              if (idx === prog.archivoActual - 1) return { ...item, estado: 'procesando' }
+              return item
+            })
           )
-        } else if (data.errores && data.errores.length > 0) {
-          const err = data.errores[0]
-          errores.push(err)
+        } else if (prog.fase === 'ocr') {
+          setFaseActual(`Procesando página ${prog.paginasProcesadas} (Archivo ${prog.archivoActual}/${prog.totalArchivos})...`)
           setProgresoLista((prev) =>
-            prev.map((item, idx) =>
-              idx === i ? { ...item, estado: 'error', error: err.error } : item
-            )
+            prev.map((item, idx) => {
+              if (idx === prog.archivoActual - 1) return { ...item, estado: 'completado', paginas: prog.paginasProcesadas }
+              return item
+            })
           )
+        } else if (prog.fase === 'agrupando') {
+          setFaseActual(`Agrupando páginas por similitud entre todos los PDFs...`)
+          setProgresoLista((prev) => prev.map((item) => ({ ...item, estado: 'completado' })))
+        } else if (prog.fase === 'completado') {
+          setFaseActual(`¡Digitalización completada! Redirigiendo a revisión...`)
         }
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Error de conexión con el servidor'
-        errores.push({ archivo: file.name, error: errorMsg })
-        setProgresoLista((prev) =>
-          prev.map((item, idx) =>
-            idx === i ? { ...item, estado: 'error', error: errorMsg } : item
-          )
-        )
+      })
+
+      setUploading(false)
+      setFaseActual('')
+      setFiles([])
+
+      // Redirigir de inmediato a la pantalla de agrupamiento de este lote
+      if (data.lote_id) {
+        navigate(ROUTES.LOTES.AGRUPAR(data.lote_id))
+        return
       }
+
+      setResultado(data)
+    } catch (err: unknown) {
+      setUploading(false)
+      setFaseActual('')
+      const errorMsg = err instanceof Error ? err.message : 'Error al procesar el lote'
+      setResultado({
+        success: false,
+        total_archivos: files.length,
+        procesados: 0,
+        total_paginas: 0,
+        lote_id: null,
+        errores: [{ archivo: 'Lote completo', error: errorMsg }],
+        detalles: [],
+      })
     }
-
-    setUploading(false)
-    setArchivoActualIndex(-1)
-    setFaseActual('')
-    setFiles([])
-
-    // Si se subió 1 solo archivo y se procesó exitosamente con su lote:
-    // Redirigir de inmediato a la pantalla de agrupamiento de ese lote
-    if (files.length === 1 && detalles.length === 1 && detalles[0].lote_id) {
-      navigate(ROUTES.LOTES.AGRUPAR(detalles[0].lote_id))
-      return
-    }
-
-    // Si se subieron varios archivos o hubo observaciones, mostrar resumen con accesos directos
-    setResultado({
-      success: errores.length === 0,
-      total_archivos: files.length,
-      procesados: procesadosTotal,
-      total_paginas: paginasTotal,
-      lote_id: detalles[0]?.lote_id || null,
-      errores,
-      detalles,
-    })
   }
-
-  const porcentajeProgreso =
-    files.length > 0 && archivoActualIndex >= 0
-      ? Math.round(((archivoActualIndex + 1) / files.length) * 100)
-      : 0
 
   return (
     <div className="space-y-6">

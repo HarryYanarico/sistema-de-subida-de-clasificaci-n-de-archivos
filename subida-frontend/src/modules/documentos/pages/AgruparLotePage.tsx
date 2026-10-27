@@ -14,11 +14,17 @@ import {
   Layers,
   ArrowLeft,
   Info,
+  Wand2,
 } from 'lucide-react'
-import { Grupo } from '@app-types/documento.types'
+import { Grupo, Pagina } from '@app-types/documento.types'
 import { useAgruparLote } from '../hooks/useAgruparLote'
 import { GrupoDecisionCard } from '../components/GrupoDecisionCard/GrupoDecisionCard'
 import { GrupoPaginasModal } from '../components/GrupoPaginasModal/GrupoPaginasModal'
+import { AlertaOrigenModal } from '../components/AlertaOrigenModal/AlertaOrigenModal'
+import { AsistenteMultipaginaModal } from '../components/AsistenteMultipaginaModal/AsistenteMultipaginaModal'
+import { SelectorInteractivoGrupoModal } from '../components/SelectorInteractivoGrupoModal/SelectorInteractivoGrupoModal'
+import { SelectorInteractivoPaginasModal } from '../components/SelectorInteractivoPaginasModal/SelectorInteractivoPaginasModal'
+import { PortapapelesFlotante } from '../components/PortapapelesFlotante/PortapapelesFlotante'
 
 const GRUPOS_POR_PAGINA = 10
 
@@ -33,6 +39,8 @@ export function AgruparLotePage() {
     tiposExistentes,
     decisiones,
     nombresEnEsteLote,
+    alertaOrigen,
+    portapapeles,
     loadingLote,
     errorLote,
     errorEnvio,
@@ -49,18 +57,111 @@ export function AgruparLotePage() {
     handleCopiarAlSiguiente,
     handleToggleDobleCara,
     handleCambiarFormatoCaras,
+    handleCambiarModoEstructura,
     handleInvertirCaras,
     handleAnexarSiguientePagina,
     handleVincularReversoConSiguiente,
+    handleRemoverPagina,
+    handleMoverPagina,
+    handleCambiarEtiquetaPagina,
+    handleMoverPaginaAGrupo,
+    handleTraerPaginaDeGrupo,
+    handleFusionarGrupos,
+    handleCrearTipoMultipagina,
     handleDesanexarUltimaPagina,
     handleSepararGrupoEnPaginasIndividuales,
     handleConfirmarAgrupamiento,
+    handleConfirmarAlertaOrigen,
+    handleCancelarAlertaOrigen,
+    handleTomarPaginaEnPortapapeles,
+    handlePegarPaginaDesdePortapapeles,
+    handleCancelarPortapapeles,
   } = useAgruparLote(loteId)
-
-
 
   // Modal para ver todas las páginas de un grupo
   const [grupoParaModal, setGrupoParaModal] = useState<Grupo | null>(null)
+  // Modal de asistente para armar tipo multi-página
+  const [asistenteMultipaginaOpen, setAsistenteMultipaginaOpen] = useState(false)
+
+  // Modal interactivo para mover página o fusionar grupo
+  const [modalGrupoState, setModalGrupoState] = useState<{
+    open: boolean
+    modo: 'mover_pagina' | 'fusionar_grupo'
+    grupoOrigenId: number
+    paginaOrigen?: Pagina
+  }>({
+    open: false,
+    modo: 'mover_pagina',
+    grupoOrigenId: 0,
+  })
+
+  // Modal interactivo para traer página de otro grupo (Pull)
+  const [modalPaginasState, setModalPaginasState] = useState<{
+    open: boolean
+    grupoDestinoId: number
+  }>({
+    open: false,
+    grupoDestinoId: 0,
+  })
+
+  // Handlers para abrir los selectores interactivos
+  const handleAbrirSelectorMoverPagina = (pagina: Pagina, grupoId: number) => {
+    setModalGrupoState({
+      open: true,
+      modo: 'mover_pagina',
+      grupoOrigenId: grupoId,
+      paginaOrigen: pagina,
+    })
+  }
+
+  const handleAbrirSelectorFusionarGrupo = (grupoId: number) => {
+    setModalGrupoState({
+      open: true,
+      modo: 'fusionar_grupo',
+      grupoOrigenId: grupoId,
+      paginaOrigen: undefined,
+    })
+  }
+
+  const handleAbrirSelectorTraerPagina = (grupoId: number) => {
+    setModalPaginasState({
+      open: true,
+      grupoDestinoId: grupoId,
+    })
+  }
+
+  const handleSeleccionarDestinoModalGrupo = (
+    grupoDestinoId: number,
+    slotDestino?: string
+  ) => {
+    if (modalGrupoState.modo === 'mover_pagina' && modalGrupoState.paginaOrigen) {
+      handleMoverPaginaAGrupo(
+        modalGrupoState.paginaOrigen.id,
+        modalGrupoState.grupoOrigenId,
+        grupoDestinoId,
+        slotDestino
+      )
+    } else if (modalGrupoState.modo === 'fusionar_grupo') {
+      // modalGrupoState.grupoOrigenId es el grupo donde se pulsó "Fusionar grupo aquí"
+      // grupoDestinoId es el grupo que se va a incorporar adentro de éste
+      handleFusionarGrupos(grupoDestinoId, modalGrupoState.grupoOrigenId)
+    }
+    setModalGrupoState((prev) => ({ ...prev, open: false }))
+  }
+
+  const handleTraerPaginaDesdeModal = (
+    grupoOrigenId: number,
+    paginaId: number,
+    slotDestino?: string
+  ) => {
+    handleTraerPaginaDeGrupo(
+      modalPaginasState.grupoDestinoId,
+      grupoOrigenId,
+      paginaId,
+      slotDestino
+    )
+    setModalPaginasState((prev) => ({ ...prev, open: false }))
+  }
 
   // Paginación si hay más de 50 grupos
   const [paginaActual, setPaginaActual] = useState(1)
@@ -72,14 +173,16 @@ export function AgruparLotePage() {
     return grupos.slice(inicio, inicio + GRUPOS_POR_PAGINA)
   }, [grupos, mostrarPaginacion, paginaActual])
 
-
   const totalPaginasLote = Math.ceil(grupos.length / GRUPOS_POR_PAGINA)
 
   const onConfirmar = async () => {
     try {
       const res = await handleConfirmarAgrupamiento()
       if (res?.id) {
-        if (lote?.persona?.codigo) {
+        if (res.incompletos) {
+          // Si quedaron documentos incompletos, navegar a la cola de revisión del lote (Punto D)
+          navigate(ROUTES.LOTES.REVISION(loteId!))
+        } else if (lote?.persona?.codigo) {
           navigate(ROUTES.PERSONAS.CASILLERO(lote.persona.id))
         } else {
           navigate(ROUTES.LOTES.DETALLE(loteId!))
@@ -149,7 +252,7 @@ export function AgruparLotePage() {
         )}
       </div>
 
-      {/* Encabezado Principal */}
+      {/* Encabezado Principal con Asistente Multi-Página */}
       <div className="bg-card border rounded-xl p-5 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -171,12 +274,25 @@ export function AgruparLotePage() {
             </div>
           </div>
 
-          <Badge
-            variant="outline"
-            className="text-xs px-3 py-1 font-semibold border-primary/30 text-primary bg-primary/5"
-          >
-            {totalGruposListos} de {grupos.length} grupos completados
-          </Badge>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAsistenteMultipaginaOpen(true)}
+              className="text-xs h-8 gap-1.5 border-primary/30 text-primary hover:bg-primary/5 font-semibold"
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              Asistente: Armar Multi-Página
+            </Button>
+
+            <Badge
+              variant="outline"
+              className="text-xs px-3 py-1 font-semibold border-primary/30 text-primary bg-primary/5"
+            >
+              {totalGruposListos} de {grupos.length} grupos completados
+            </Badge>
+          </div>
         </div>
 
         {/* Banner si es la primera vez sin tipos existentes */}
@@ -193,7 +309,7 @@ export function AgruparLotePage() {
           <p className="text-xs text-muted-foreground bg-muted/30 p-2.5 rounded-lg border">
             👉 Revisa las miniaturas de cada grupo. Si coincide con un tipo sugerido, pulsa{' '}
             <strong>Confirmar</strong>. Si es un tipo nuevo, <strong>escribe su nombre</strong>{' '}
-            directamente en el recuadro destacado.
+            directamente en el recuadro destacado. Puedes mover páginas libremente entre cualquier grupo (Push y Pull) o fusionar grupos completos.
           </p>
         )}
       </div>
@@ -208,7 +324,6 @@ export function AgruparLotePage() {
       {/* Lista de Tarjetas de Grupos */}
       <div className="space-y-5">
         {gruposPaginados.map((grupo: Grupo, idx: number) => {
-
           const indexReal = mostrarPaginacion
             ? (paginaActual - 1) * GRUPOS_POR_PAGINA + idx + 1
             : idx + 1
@@ -231,6 +346,8 @@ export function AgruparLotePage() {
               puedeCopiarAlSiguiente={!esUltimo}
               puedeVincularConSiguiente={!esUltimo}
               siguienteNumeroGrupo={siguienteNumero}
+              todosLosGrupos={grupos}
+              itemPortapapeles={portapapeles}
               onAceptarSugerido={handleAceptarSugerido}
               onCambiarAOtroTipo={handleCambiarAOtroTipo}
               onCambiarANuevoTipo={handleCambiarANuevoTipo}
@@ -241,19 +358,29 @@ export function AgruparLotePage() {
               onCopiarAlSiguiente={handleCopiarAlSiguiente}
               onToggleDobleCara={handleToggleDobleCara}
               onCambiarFormatoCaras={handleCambiarFormatoCaras}
+              onCambiarModoEstructura={handleCambiarModoEstructura}
               onInvertirCaras={handleInvertirCaras}
               onAnexarSiguientePagina={handleAnexarSiguientePagina}
               onVincularReversoConSiguiente={handleVincularReversoConSiguiente}
+              onRemoverPagina={handleRemoverPagina}
+              onMoverPagina={handleMoverPagina}
+              onCambiarEtiquetaPagina={handleCambiarEtiquetaPagina}
+              onMoverPaginaAGrupo={handleMoverPaginaAGrupo}
+              onTraerPaginaDeGrupo={handleTraerPaginaDeGrupo}
+              onFusionarGrupos={handleFusionarGrupos}
+              onAbrirSelectorMoverPagina={handleAbrirSelectorMoverPagina}
+              onAbrirSelectorTraerPagina={handleAbrirSelectorTraerPagina}
+              onAbrirSelectorFusionarGrupo={handleAbrirSelectorFusionarGrupo}
+              onTomarPaginaEnPortapapeles={handleTomarPaginaEnPortapapeles}
+              onPegarPaginaDesdePortapapeles={handlePegarPaginaDesdePortapapeles}
               onDesanexarUltimaPagina={handleDesanexarUltimaPagina}
               onSepararGrupo={handleSepararGrupoEnPaginasIndividuales}
               onVerTodasPaginas={setGrupoParaModal}
               autoFocus={idx === 0}
             />
-
           )
         })}
       </div>
-
 
       {/* Paginación si > 50 grupos */}
       {mostrarPaginacion && (
@@ -342,6 +469,51 @@ export function AgruparLotePage() {
       {/* Modal para ver todas las páginas del grupo */}
       <GrupoPaginasModal grupo={grupoParaModal} onClose={() => setGrupoParaModal(null)} />
 
+      {/* Modal de Advertencia de Origen PDF Mixto (Punto C) */}
+      <AlertaOrigenModal
+        open={alertaOrigen.open}
+        origenPagina={alertaOrigen.origenPagina}
+        origenDestino={alertaOrigen.origenDestino}
+        onConfirmar={handleConfirmarAlertaOrigen}
+        onCancelar={handleCancelarAlertaOrigen}
+      />
+
+      {/* Modal Asistente Multi-Página (Punto B) */}
+      <AsistenteMultipaginaModal
+        open={asistenteMultipaginaOpen}
+        grupos={grupos}
+        tiposExistentes={tiposExistentes}
+        onCerrar={() => setAsistenteMultipaginaOpen(false)}
+        onCrearMultipagina={handleCrearTipoMultipagina}
+      />
+
+      {/* Portapapeles Flotante para Cortar y Pegar Páginas entre grupos */}
+      <PortapapelesFlotante
+        item={portapapeles}
+        onCancelar={handleCancelarPortapapeles}
+      />
+
+      {/* Modal Interactivo de Exploración de Grupos (Mover Página / Fusionar Grupo) */}
+      <SelectorInteractivoGrupoModal
+        open={modalGrupoState.open}
+        modo={modalGrupoState.modo}
+        grupoOrigenId={modalGrupoState.grupoOrigenId}
+        paginaOrigen={modalGrupoState.paginaOrigen}
+        grupos={grupos}
+        decisiones={decisiones}
+        onCerrar={() => setModalGrupoState((prev) => ({ ...prev, open: false }))}
+        onSeleccionarDestino={handleSeleccionarDestinoModalGrupo}
+      />
+
+      {/* Modal Interactivo de Galería de Páginas para Traer (Pull) */}
+      <SelectorInteractivoPaginasModal
+        open={modalPaginasState.open}
+        grupoDestinoId={modalPaginasState.grupoDestinoId}
+        grupos={grupos}
+        onCerrar={() => setModalPaginasState((prev) => ({ ...prev, open: false }))}
+        onTraerPagina={handleTraerPaginaDesdeModal}
+      />
+
       {/* Datalist accesible para autocompletar en los inputs de nombres */}
       <datalist id="tipos-lote-list">
         {Array.from(
@@ -353,4 +525,3 @@ export function AgruparLotePage() {
     </div>
   )
 }
-

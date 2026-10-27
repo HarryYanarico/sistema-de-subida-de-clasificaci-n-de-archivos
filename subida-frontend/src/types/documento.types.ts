@@ -9,6 +9,7 @@ export type EstadoDocumento =
   | 'dudosa'
   | 'duplicado'
   | 'pendiente'
+  | 'incompleto'
   | 'sin_clasificar'
   | 'verificado'
 
@@ -62,12 +63,29 @@ export interface Lote {
   nombreArchivoOriginal: string
   totalPaginas: number
   totalGrupos: number
+  borradorAgrupamiento?: Record<string, any> | null
   persona?: Persona | null
   grupos?: Grupo[]
   paginas?: Pagina[]
   documentos?: Documento[]
   parejasSugeridas?: ParejaSugerida[]
   createdAt?: string
+}
+
+export type ModoEstructura = 'INDEPENDIENTE' | 'ANVERSO_REVERSO' | 'MULTIPAGINA'
+
+export interface SlotInfo {
+  paginaId: number
+  slot: string
+  orden: number
+  etiqueta?: string
+  pdfOrigen?: string
+}
+
+export interface LoteRevisionData {
+  lote: Lote
+  documentosIncompletos: Documento[]
+  paginasHuerfanas: Pagina[]
 }
 
 export interface Documento {

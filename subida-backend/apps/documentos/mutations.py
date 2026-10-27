@@ -215,6 +215,25 @@ class AsignacionGrupoInput:
     tipo_documento_id: Optional[int] = None
     nombre_nuevo_tipo: Optional[str] = None
     es_doble_cara: Optional[bool] = None
+    pagina_ids: Optional[list[strawberry.ID]] = None
+    estructura_paginas: Optional[strawberry.scalars.JSON] = None
+    modo_estructura: Optional[str] = None
+    slots_esperados: Optional[int] = None
+    esta_incompleto: Optional[bool] = None
+    alerta_origen_mixto: Optional[bool] = None
+
+
+@strawberry.type
+class OperacionDocumentoResponse:
+    success: bool
+    message: str
+    documento: Optional[DocumentoType] = None
+
+
+@strawberry.type
+class GuardarBorradorResponse:
+    success: bool
+    message: str
 
 
 @strawberry.type
@@ -654,14 +673,27 @@ class Mutation:
 
         with transaction.atomic():
             for asig in asignaciones:
-                grupo = Grupo.objects.filter(id=int(str(asig.grupo_id)), lote=lote, unidad=unidad).first()
-                if not grupo:
+                grupo = None
+                if str(asig.grupo_id).isdigit():
+                    grupo = Grupo.objects.filter(id=int(str(asig.grupo_id)), lote=lote, unidad=unidad).first()
+
+                # Prioridad a las páginas exactas enviadas por el frontend
+                if asig.pagina_ids:
+                    clean_pids = [int(str(pid)) for pid in asig.pagina_ids]
+                    pags_dict = {p.id: p for p in Pagina.objects.filter(id__in=clean_pids, unidad=unidad)}
+                    pags_grupo = [pags_dict[pid] for pid in clean_pids if pid in pags_dict]
+                elif grupo:
+                    pags_grupo = list(grupo.paginas.all().order_by('nro_pagina_en_pdf'))
+                else:
+                    pags_grupo = []
+
+                if not pags_grupo:
                     continue
 
                 tipo = None
                 if asig.tipo_documento_id:
                     tipo = TipoDocumento.objects.filter(id=asig.tipo_documento_id, unidad=unidad).first()
-                    if tipo and not tipo.firma_consolidada and grupo.firma_consolidada:
+                    if tipo and not tipo.firma_consolidada and grupo and grupo.firma_consolidada:
                         tipo.firma_consolidada = grupo.firma_consolidada
                         tipo.save(update_fields=['firma_consolidada'])
                 elif asig.nombre_nuevo_tipo and asig.nombre_nuevo_tipo.strip():
@@ -670,22 +702,20 @@ class Mutation:
                     tipo = TipoDocumento.objects.filter(slug=slug_tipo, unidad=unidad).first()
                     if not tipo:
                         from .agrupador import _obtener_palabras
-                        palabras = _obtener_palabras(grupo.firma_consolidada)
+                        firma_init = (grupo.firma_consolidada if grupo else None) or {}
+                        palabras = _obtener_palabras(firma_init) if firma_init else []
                         palabras_str = ', '.join(palabras[:10]) if palabras else nombre_tipo.lower()
                         tipo = TipoDocumento.objects.create(
                             unidad=unidad,
                             nombre=nombre_tipo,
                             slug=slug_tipo,
                             palabras_clave=palabras_str,
-                            firma_consolidada=grupo.firma_consolidada or {},
+                            firma_consolidada=firma_init,
                             color="#4F46E5",
                         )
-                        pags_ejemplos = list(grupo.paginas.all()[:20])
-                        if pags_ejemplos:
-                            tipo.ejemplos_paginas.set(pags_ejemplos)
+                        tipo.ejemplos_paginas.set(pags_grupo[:20])
 
-                pags_grupo = list(grupo.paginas.all().order_by('nro_pagina_en_pdf'))
-                nombre_final_doc = tipo.nombre if tipo else (lote.nombre_archivo_original or f"Documento Grupo {grupo.id}")
+                nombre_final_doc = tipo.nombre if tipo else (lote.nombre_archivo_original or f"Documento")
                 es_doble = bool(asig.es_doble_cara) if asig.es_doble_cara is not None else (len(pags_grupo) == 2)
 
                 archivo_origen = pags_grupo[0].pdf_origen if (pags_grupo and getattr(pags_grupo[0], 'pdf_origen', None)) else lote.nombre_archivo_original
@@ -693,51 +723,93 @@ class Mutation:
                 p_hash = pags_grupo[0].phash if pags_grupo else None
                 txt_extraido = '\n'.join(p.texto_ocr for p in pags_grupo if p.texto_ocr)
 
-                if es_doble and len(pags_grupo) == 2:
-                    doc = Documento.objects.create(
-                        unidad=unidad,
-                        lote=lote,
-                        persona=getattr(lote, 'persona', None),
-                        tipo_documento=tipo,
-                        es_doble_cara=True,
-                        nombre_final=nombre_final_doc,
-                        estado='confirmado',
-                        archivo_original=archivo_origen,
-                        subido_por=lote.subido_por,
-                        pagina_numero=p_num,
-                        texto_extraido=txt_extraido,
-                        phash=p_hash,
-                    )
-                    doc.paginas.set(pags_grupo)
-                elif len(pags_grupo) > 0:
-                    doc = Documento.objects.create(
-                        unidad=unidad,
-                        lote=lote,
-                        persona=getattr(lote, 'persona', None),
-                        tipo_documento=tipo,
-                        es_doble_cara=es_doble,
-                        nombre_final=nombre_final_doc,
-                        estado='confirmado',
-                        archivo_original=archivo_origen,
-                        subido_por=lote.subido_por,
-                        pagina_numero=p_num,
-                        texto_extraido=txt_extraido,
-                        phash=p_hash,
-                    )
-                    doc.paginas.set(pags_grupo)
+                if asig.estructura_paginas and isinstance(asig.estructura_paginas, list):
+                    orden_dict = {}
+                    for idx, item in enumerate(asig.estructura_paginas):
+                        if isinstance(item, dict) and 'pagina_id' in item:
+                            try:
+                                orden_dict[int(item['pagina_id'])] = item.get('orden', idx + 1)
+                            except (ValueError, TypeError):
+                                pass
+                    pags_grupo.sort(key=lambda p: orden_dict.get(p.id, 999))
+
+                es_incompleto = bool(asig.esta_incompleto)
+                if asig.modo_estructura == 'ANVERSO_REVERSO' and len(pags_grupo) < 2:
+                    es_incompleto = True
+                elif asig.slots_esperados and len(pags_grupo) < asig.slots_esperados:
+                    es_incompleto = True
+
+                estado_doc = 'incompleto' if es_incompleto else 'confirmado'
+
+                historial = []
+                if asig.estructura_paginas:
+                    historial.append({'accion': 'estructura_caras', 'detalle': asig.estructura_paginas})
+                if asig.alerta_origen_mixto:
+                    historial.append({'accion': 'alerta_origen_mixto', 'detalle': 'Páginas provienen de PDFs distintos confirmadas por el usuario'})
+                if es_incompleto:
+                    historial.append({'accion': 'estado_incompleto', 'motivo': 'Documento confirmado con slots vacíos o incompletos'})
+
+                doc = Documento.objects.create(
+                    unidad=unidad,
+                    lote=lote,
+                    persona=getattr(lote, 'persona', None),
+                    tipo_documento=tipo,
+                    es_doble_cara=es_doble,
+                    nombre_final=nombre_final_doc,
+                    estado=estado_doc,
+                    archivo_original=archivo_origen,
+                    subido_por=lote.subido_por,
+                    pagina_numero=p_num,
+                    texto_extraido=txt_extraido,
+                    phash=p_hash,
+                    historial_clasificacion=historial,
+                )
+                doc.paginas.set(pags_grupo)
+
+                # Compilar PDF único con las páginas asociadas en MinIO
+                try:
+                    import fitz
+                    from apps.storage.services import MinIOService
+                    storage = MinIOService()
+                    nuevo_pdf = fitz.open()
+
+                    for p in pags_grupo:
+                        if getattr(p, 'pdf_origen', None):
+                            pdf_bytes = storage.get_file(p.pdf_origen)
+                            src_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                            p_idx = (p.nro_pagina_en_pdf or 1) - 1
+                            if 0 <= p_idx < len(src_doc):
+                                nuevo_pdf.insert_pdf(src_doc, from_page=p_idx, to_page=p_idx)
+                            src_doc.close()
+
+                    if len(nuevo_pdf) > 0:
+                        compilado_bytes = nuevo_pdf.tobytes()
+                        cod_folder = getattr(getattr(lote, 'persona', None), 'codigo', None) or f"unidad_{getattr(unidad, 'codigo', 'general')}"
+                        nombre_pdf_salida = f"doc_{doc.id}_{tipo.slug if tipo else 'general'}.pdf"
+                        key_compilado = storage.upload_pdf(cod_folder, nombre_pdf_salida, compilado_bytes)
+                        doc.archivo_original = key_compilado
+                        doc.save(update_fields=['archivo_original'])
+                    nuevo_pdf.close()
+                except Exception:
+                    pass
 
                 for p in pags_grupo:
                     p.estado = 'confirmada'
-                    p.save(update_fields=['estado'])
+                    if grupo:
+                        p.grupo = grupo
+                        p.save(update_fields=['estado', 'grupo'])
+                    else:
+                        p.save(update_fields=['estado'])
 
                 if tipo and pags_grupo:
                     from .agrupador import actualizar_firma_tipo_documento
                     actualizar_firma_tipo_documento(tipo, pags_grupo)
 
-                grupo.estado = 'confirmado'
-                if tipo:
-                    grupo.tipo_documento_sugerido = tipo
-                grupo.save(update_fields=['estado', 'tipo_documento_sugerido'])
+                if grupo:
+                    grupo.estado = 'confirmado'
+                    if tipo:
+                        grupo.tipo_documento_sugerido = tipo
+                    grupo.save(update_fields=['estado', 'tipo_documento_sugerido'])
 
             lote.estado = 'confirmado'
             lote.save(update_fields=['estado'])
@@ -906,3 +978,143 @@ class Mutation:
         tipo.save(update_fields=['palabras_clave', 'keywords_obligatorias'])
 
         return tipo
+
+    @strawberry.mutation
+    def guardar_borrador_agrupamiento(
+        self,
+        info: strawberry.types.Info,
+        lote_id: strawberry.ID,
+        borrador: strawberry.scalars.JSON,
+    ) -> GuardarBorradorResponse:
+        from apps.core.tenancy import get_unidad_from_info
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            return GuardarBorradorResponse(success=False, message="No autenticado o unidad no válida")
+
+        lote = Lote.objects.filter(id=int(str(lote_id)), unidad=unidad).first()
+        if not lote:
+            return GuardarBorradorResponse(success=False, message=f"Lote {lote_id} no encontrado")
+
+        lote.borrador_agrupamiento = borrador or {}
+        lote.save(update_fields=['borrador_agrupamiento'])
+        return GuardarBorradorResponse(success=True, message="Borrador guardado exitosamente")
+
+    @strawberry.mutation
+    def asignar_pagina_a_documento_incompleto(
+        self,
+        info: strawberry.types.Info,
+        documento_id: strawberry.ID,
+        pagina_id: strawberry.ID,
+        slot: Optional[str] = None,
+    ) -> OperacionDocumentoResponse:
+        from django.db import transaction
+        from apps.core.tenancy import get_unidad_from_info
+
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            return OperacionDocumentoResponse(success=False, message="No autenticado")
+
+        doc = Documento.objects.filter(id=int(str(documento_id)), unidad=unidad).first()
+        if not doc:
+            return OperacionDocumentoResponse(success=False, message="Documento no encontrado")
+
+        pagina = Pagina.objects.filter(id=int(str(pagina_id)), unidad=unidad).first()
+        if not pagina:
+            return OperacionDocumentoResponse(success=False, message="Página no encontrada")
+
+        with transaction.atomic():
+            doc.paginas.add(pagina)
+            pagina.estado = 'confirmada'
+            pagina.save(update_fields=['estado'])
+
+            # Registrar en historial
+            hist = list(doc.historial_clasificacion or [])
+            hist.append({
+                'accion': 'asignar_slot_revision',
+                'pagina_id': pagina.id,
+                'slot': slot or f'Pág. {doc.paginas.count()}',
+            })
+            doc.historial_clasificacion = hist
+            doc.estado = 'confirmado'  # Al completar slot, pasa a confirmado
+            doc.save(update_fields=['historial_clasificacion', 'estado'])
+
+            # Recompilar PDF con las páginas asociadas
+            try:
+                import fitz
+                from apps.storage.services import MinIOService
+                storage = MinIOService()
+                nuevo_pdf = fitz.open()
+
+                for p in doc.paginas.all().order_by('nro_pagina_en_pdf'):
+                    if getattr(p, 'pdf_origen', None):
+                        pdf_bytes = storage.get_file(p.pdf_origen)
+                        src_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                        p_idx = (p.nro_pagina_en_pdf or 1) - 1
+                        if 0 <= p_idx < len(src_doc):
+                            nuevo_pdf.insert_pdf(src_doc, from_page=p_idx, to_page=p_idx)
+                        src_doc.close()
+
+                if len(nuevo_pdf) > 0:
+                    compilado_bytes = nuevo_pdf.tobytes()
+                    persona = getattr(doc.lote, 'persona', None)
+                    cod_folder = getattr(persona, 'codigo', None) or f"unidad_{getattr(unidad, 'codigo', 'general')}"
+                    nombre_pdf_salida = f"doc_{doc.id}_{doc.tipo_documento.slug if doc.tipo_documento else 'general'}.pdf"
+                    key_compilado = storage.upload_pdf(cod_folder, nombre_pdf_salida, compilado_bytes)
+                    doc.archivo_original = key_compilado
+                    doc.save(update_fields=['archivo_original'])
+                nuevo_pdf.close()
+            except Exception:
+                pass
+
+        return OperacionDocumentoResponse(success=True, message="Página asignada correctamente", documento=doc)
+
+    @strawberry.mutation
+    def marcar_documento_completo(
+        self,
+        info: strawberry.types.Info,
+        documento_id: strawberry.ID,
+    ) -> OperacionDocumentoResponse:
+        from apps.core.tenancy import get_unidad_from_info
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            return OperacionDocumentoResponse(success=False, message="No autenticado")
+
+        doc = Documento.objects.filter(id=int(str(documento_id)), unidad=unidad).first()
+        if not doc:
+            return OperacionDocumentoResponse(success=False, message="Documento no encontrado")
+
+        doc.estado = 'confirmado'
+        hist = list(doc.historial_clasificacion or [])
+        hist.append({'accion': 'marcar_completo_manual', 'detalle': 'Aceptado como completo por operador'})
+        doc.historial_clasificacion = hist
+        doc.save(update_fields=['estado', 'historial_clasificacion'])
+
+        return OperacionDocumentoResponse(success=True, message="Documento marcado como completo", documento=doc)
+
+    @strawberry.mutation
+    def descartar_documento_incompleto(
+        self,
+        info: strawberry.types.Info,
+        documento_id: strawberry.ID,
+    ) -> OperacionDocumentoResponse:
+        from apps.core.tenancy import get_unidad_from_info
+        unidad = get_unidad_from_info(info)
+        if not unidad:
+            return OperacionDocumentoResponse(success=False, message="No autenticado")
+
+        doc = Documento.objects.filter(id=int(str(documento_id)), unidad=unidad).first()
+        if not doc:
+            return OperacionDocumentoResponse(success=False, message="Documento no encontrado")
+
+        # Devolver sus páginas al estado sin_agrupar para no perderlas
+        for p in doc.paginas.all():
+            p.estado = 'sin_agrupar'
+            p.save(update_fields=['estado'])
+
+        doc.estado = 'descartado'
+        hist = list(doc.historial_clasificacion or [])
+        hist.append({'accion': 'descartar_incompleto', 'detalle': 'Documento descartado en revisión de lote'})
+        doc.historial_clasificacion = hist
+        doc.save(update_fields=['estado', 'historial_clasificacion'])
+
+        return OperacionDocumentoResponse(success=True, message="Documento descartado", documento=doc)

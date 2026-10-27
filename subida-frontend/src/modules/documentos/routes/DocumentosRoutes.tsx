@@ -4,6 +4,7 @@ import { SubirDocumentosPage } from '../pages/SubirDocumentosPage'
 import { DocumentosPendientesPage } from '../pages/DocumentosPendientesPage'
 import { AgruparLotePage } from '../pages/AgruparLotePage'
 import { LoteDetallePage } from '../pages/LoteDetallePage'
+import { LoteRevisionPage } from '../pages/LoteRevisionPage'
 
 export const documentosRoutes: RouteDefinition[] = [
   {
@@ -19,7 +20,15 @@ export const documentosRoutes: RouteDefinition[] = [
     element: <AgruparLotePage />,
   },
   {
+    path: '/lotes/:loteId/agrupar',
+    element: <AgruparLotePage />,
+  },
+  {
     path: ROUTES.LOTES.DETALLE(),
     element: <LoteDetallePage />,
+  },
+  {
+    path: ROUTES.LOTES.REVISION(),
+    element: <LoteRevisionPage />,
   },
 ]

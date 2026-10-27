@@ -19,6 +19,7 @@ export interface ResultadoBatch {
   total_archivos: number
   procesados: number
   total_paginas: number
+  total_grupos?: number
   lote_id?: number | null
   errores: ErrorArchivo[]
   detalles: DetalleArchivo[]
