@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -8,7 +7,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ExternalLink, FileText, Eye, Layers } from 'lucide-react'
+import { ExternalLink, FileText } from 'lucide-react'
 import { Pagina } from '@app-types/documento.types'
 import { getPaginaPdfUrl } from '../../services/upload.service'
 
@@ -18,8 +17,6 @@ interface VisorPaginaPdfModalProps {
 }
 
 export function VisorPaginaPdfModal({ pagina, onClose }: VisorPaginaPdfModalProps) {
-  const [mostrarOcr, setMostrarOcr] = useState(false)
-
   if (!pagina) return null
 
   const pdfUrl = getPaginaPdfUrl(pagina.id)
@@ -56,26 +53,6 @@ export function VisorPaginaPdfModal({ pagina, onClose }: VisorPaginaPdfModalProp
             <div className="flex items-center gap-2">
               <Button
                 type="button"
-                variant={mostrarOcr ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={() => setMostrarOcr((prev) => !prev)}
-                className="h-8 text-xs gap-1.5"
-              >
-                {mostrarOcr ? (
-                  <>
-                    <Eye className="h-3.5 w-3.5" />
-                    <span>Ver PDF</span>
-                  </>
-                ) : (
-                  <>
-                    <Layers className="h-3.5 w-3.5" />
-                    <span>Ver Texto OCR</span>
-                  </>
-                )}
-              </Button>
-
-              <Button
-                type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleOpenExternal}
@@ -89,33 +66,15 @@ export function VisorPaginaPdfModal({ pagina, onClose }: VisorPaginaPdfModalProp
           </div>
         </DialogHeader>
 
-        {/* Visor interactivo: PDF o Texto OCR */}
+        {/* Visor interactivo: PDF */}
         <div className="flex-1 w-full h-full min-h-0 pt-3 flex flex-col">
-          {mostrarOcr ? (
-            <div className="flex-1 overflow-y-auto p-4 bg-muted/30 rounded-lg border font-mono text-xs whitespace-pre-wrap leading-relaxed">
-              <div className="flex items-center justify-between border-b pb-2 mb-3 font-sans font-semibold text-foreground text-xs">
-                <span>Texto OCR extraído de la página #{pagina.nroPaginaEnPdf}</span>
-                <span className="text-muted-foreground font-normal">
-                  {pagina.textoOcr ? `${pagina.textoOcr.length} caracteres` : '0 caracteres'}
-                </span>
-              </div>
-              {pagina.textoOcr ? (
-                pagina.textoOcr
-              ) : (
-                <span className="text-muted-foreground italic">
-                  No se detectó texto OCR legible en esta página.
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex-1 w-full h-full min-h-0 bg-muted/20 rounded-lg border overflow-hidden relative shadow-inner">
-              <iframe
-                src={pdfUrl}
-                title={`Página ${pagina.nroPaginaEnPdf} PDF`}
-                className="w-full h-full border-0"
-              />
-            </div>
-          )}
+          <div className="flex-1 w-full h-full min-h-0 bg-muted/20 rounded-lg border overflow-hidden relative shadow-inner">
+            <iframe
+              src={pdfUrl}
+              title={`Página ${pagina.nroPaginaEnPdf} PDF`}
+              className="w-full h-full border-0"
+            />
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -116,7 +116,24 @@ class GrupoType:
 
     @strawberry_django.field
     def paginas(self) -> list[PaginaType]:
-        return list(self.paginas.all().order_by('nro_pagina_en_pdf'))
+        docs = list(self.documentos.all().order_by('id'))
+        if docs:
+            ordenadas = []
+            vistas = set()
+            for d in docs:
+                for p in d.get_paginas_ordenadas():
+                    if p.id not in vistas and p.grupo_id == self.id:
+                        ordenadas.append(p)
+                        vistas.add(p.id)
+            for p in self.paginas.all().order_by('nro_pagina_en_pdf', 'id'):
+                if p.id not in vistas:
+                    ordenadas.append(p)
+            return ordenadas
+        return list(self.paginas.all().order_by('nro_pagina_en_pdf', 'id'))
+
+    @strawberry_django.field
+    def documentos(self) -> list[DocumentoType]:
+        return list(self.documentos.all().order_by('id'))
 
     @strawberry_django.field
     def parejas_sugeridas(self) -> list[ParejaSugeridaType]:
@@ -149,7 +166,10 @@ class LoteType:
 
     @strawberry_django.field
     def grupos(self) -> list[GrupoType]:
-        return list(self.grupos.all().order_by('id'))
+        qs = list(self.grupos.exclude(estado='fusionado').order_by('id'))
+        normales = [g for g in qs if g.estado != 'descartadas']
+        descartadas = [g for g in qs if g.estado == 'descartadas']
+        return normales + descartadas
 
     @strawberry_django.field
     def paginas(self) -> list[PaginaType]:
@@ -192,7 +212,7 @@ class LoteType:
     ],
 )
 class DocumentoType:
-    persona: PersonaType
+    persona: Optional[PersonaType]
     tipo_documento: Optional[TipoDocumentoType]
     unidad: Optional[UnidadType]
 
@@ -201,8 +221,12 @@ class DocumentoType:
         return self.lote
 
     @strawberry_django.field
+    def grupo_id(self) -> Optional[strawberry.ID]:
+        return strawberry.ID(str(self.grupo_id)) if self.grupo_id else None
+
+    @strawberry_django.field
     def paginas(self) -> list[PaginaType]:
-        return list(self.paginas.all().order_by('nro_pagina_en_pdf'))
+        return self.get_paginas_ordenadas()
 
     @strawberry_django.field
     def es_doble_cara(self) -> bool:
@@ -539,7 +563,10 @@ class Query:
         from apps.core.tenancy import get_unidad_from_info
         try:
             unidad = get_unidad_from_info(info)
-            return list(Grupo.objects.filter(lote_id=int(lote_id), unidad=unidad).order_by('id'))
+            qs = list(Grupo.objects.filter(lote_id=int(lote_id), unidad=unidad).exclude(estado='fusionado').order_by('id'))
+            normales = [g for g in qs if g.estado != 'descartadas']
+            descartadas = [g for g in qs if g.estado == 'descartadas']
+            return normales + descartadas
         except Exception:
             return []
 

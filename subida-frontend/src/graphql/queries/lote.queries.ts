@@ -58,6 +58,14 @@ export const GET_LOTE = gql`
           descartable
           estado
         }
+        documentos {
+          id
+          esDobleCara
+          paginas {
+            id
+            nroPaginaEnPdf
+          }
+        }
       }
       paginas {
         id

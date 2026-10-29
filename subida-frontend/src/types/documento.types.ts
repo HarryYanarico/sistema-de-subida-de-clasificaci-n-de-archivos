@@ -51,8 +51,9 @@ export interface Grupo {
   firmaConsolidada?: Record<string, any>
   totalPaginas: number
   tipoDocumentoSugerido?: TipoDocumento | null
-  estado: 'nuevo' | 'coincide_con_tipo' | 'confirmado' | 'rechazado' | string
+  estado: 'nuevo' | 'coincide_con_tipo' | 'confirmado' | 'rechazado' | 'fusionado' | 'descartadas' | string
   paginas?: Pagina[]
+  documentos?: Documento[]
   parejasSugeridas?: ParejaSugerida[]
   createdAt?: string
 }
@@ -72,7 +73,7 @@ export interface Lote {
   createdAt?: string
 }
 
-export type ModoEstructura = 'INDEPENDIENTE' | 'ANVERSO_REVERSO' | 'MULTIPAGINA'
+export type ModoEstructura = 'INDEPENDIENTE' | 'SECUENCIAL' | 'ANVERSO_REVERSO' | 'MIXTA' | 'MULTIPAGINA'
 
 export interface SlotInfo {
   paginaId: number

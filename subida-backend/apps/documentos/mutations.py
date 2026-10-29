@@ -541,7 +541,7 @@ class Mutation:
                 nombre_final=nombre,
                 estado='pendiente',
             )
-            doc.paginas.set(paginas)
+            doc.set_paginas_ordenadas(paginas)
 
             for p in paginas:
                 p.estado = 'confirmada'
@@ -585,8 +585,10 @@ class Mutation:
                     documento=doc, advertencia=None, success=False, message="La página ya está vinculada a este documento"
                 )
 
-            doc.paginas.add(pagina)
-            total = doc.paginas.count()
+            pags_actuales = doc.get_paginas_ordenadas()
+            pags_nuevas = pags_actuales + [pagina]
+            doc.set_paginas_ordenadas(pags_nuevas)
+            total = len(pags_nuevas)
             doc.es_doble_cara = (total >= 2)
             doc.save(update_fields=['es_doble_cara'])
 
@@ -635,8 +637,9 @@ class Mutation:
                     documento=doc, success=False, message="La página no pertenece a este documento"
                 )
 
-            doc.paginas.remove(pagina)
-            total = doc.paginas.count()
+            pags_restantes = [p for p in doc.get_paginas_ordenadas() if p.id != pagina.id]
+            doc.set_paginas_ordenadas(pags_restantes)
+            total = len(pags_restantes)
             doc.es_doble_cara = (total == 2)
             doc.save(update_fields=['es_doble_cara'])
 
@@ -672,6 +675,21 @@ class Mutation:
             raise ValueError(f"Lote {lote_id} no encontrado en la unidad actual")
 
         with transaction.atomic():
+            # RF-14: Validar que no existan dos grupos con el mismo nombre en el mismo lote
+            nombres_usados_lote = set()
+            for asig_chk in asignaciones:
+                nom_chk = None
+                if asig_chk.nombre_nuevo_tipo and asig_chk.nombre_nuevo_tipo.strip():
+                    nom_chk = _slug_de(asig_chk.nombre_nuevo_tipo.strip())
+                elif asig_chk.tipo_documento_id:
+                    t_chk = TipoDocumento.objects.filter(id=asig_chk.tipo_documento_id, unidad=unidad).first()
+                    if t_chk:
+                        nom_chk = t_chk.slug
+                if nom_chk:
+                    if nom_chk in nombres_usados_lote:
+                        raise ValueError(f"No puede haber dos grupos con el mismo nombre ('{asig_chk.nombre_nuevo_tipo or nom_chk}') en el mismo lote. Fusiona los grupos o renómbralos.")
+                    nombres_usados_lote.add(nom_chk)
+
             for asig in asignaciones:
                 grupo = None
                 if str(asig.grupo_id).isdigit():
@@ -683,11 +701,25 @@ class Mutation:
                     pags_dict = {p.id: p for p in Pagina.objects.filter(id__in=clean_pids, unidad=unidad)}
                     pags_grupo = [pags_dict[pid] for pid in clean_pids if pid in pags_dict]
                 elif grupo:
-                    pags_grupo = list(grupo.paginas.all().order_by('nro_pagina_en_pdf'))
+                    pags_grupo = list(grupo.paginas.all().order_by('nro_pagina_en_pdf', 'id'))
                 else:
                     pags_grupo = []
 
                 if not pags_grupo:
+                    continue
+
+                # RF-19 y RF-30: Si es el grupo "Descartadas" y no se le asignó ningún tipo ni nombre,
+                # sus páginas permanecen como descartadas y no se crean documentos para ellas.
+                es_grupo_descartadas = bool(grupo and grupo.estado == 'descartadas')
+                tiene_tipo_asignado = bool(
+                    asig.tipo_documento_id or (asig.nombre_nuevo_tipo and asig.nombre_nuevo_tipo.strip())
+                )
+                if es_grupo_descartadas and not tiene_tipo_asignado:
+                    for p in pags_grupo:
+                        p.estado = 'descartada'
+                        p.descartable = True
+                        p.grupo = grupo
+                        p.save(update_fields=['estado', 'descartable', 'grupo'])
                     continue
 
                 tipo = None
@@ -715,83 +747,207 @@ class Mutation:
                         )
                         tipo.ejemplos_paginas.set(pags_grupo[:20])
 
-                nombre_final_doc = tipo.nombre if tipo else (lote.nombre_archivo_original or f"Documento")
-                es_doble = bool(asig.es_doble_cara) if asig.es_doble_cara is not None else (len(pags_grupo) == 2)
+                nombre_final_doc = tipo.nombre if tipo else (lote.nombre_archivo_original or "Documento")
+                es_doble_default = bool(asig.es_doble_cara)
 
-                archivo_origen = pags_grupo[0].pdf_origen if (pags_grupo and getattr(pags_grupo[0], 'pdf_origen', None)) else lote.nombre_archivo_original
-                p_num = pags_grupo[0].nro_pagina_en_pdf if pags_grupo else 1
-                p_hash = pags_grupo[0].phash if pags_grupo else None
-                txt_extraido = '\n'.join(p.texto_ocr for p in pags_grupo if p.texto_ocr)
-
+                orden_dict = {}
+                slot_dict = {}
+                doc_idx_dict = {}
                 if asig.estructura_paginas and isinstance(asig.estructura_paginas, list):
-                    orden_dict = {}
                     for idx, item in enumerate(asig.estructura_paginas):
                         if isinstance(item, dict) and 'pagina_id' in item:
                             try:
-                                orden_dict[int(item['pagina_id'])] = item.get('orden', idx + 1)
+                                pid_int = int(item['pagina_id'])
+                                orden_dict[pid_int] = int(item.get('orden', idx + 1))
+                                slot_dict[pid_int] = str(item.get('slot') or item.get('etiqueta') or '')
+                                if item.get('doc_index') is not None:
+                                    doc_idx_dict[pid_int] = int(item['doc_index'])
                             except (ValueError, TypeError):
                                 pass
                     pags_grupo.sort(key=lambda p: orden_dict.get(p.id, 999))
 
-                es_incompleto = bool(asig.esta_incompleto)
-                if asig.modo_estructura == 'ANVERSO_REVERSO' and len(pags_grupo) < 2:
-                    es_incompleto = True
-                elif asig.slots_esperados and len(pags_grupo) < asig.slots_esperados:
-                    es_incompleto = True
+                # RT-05, RT-06 y RF-31: Construir bloques de documentos según la estructura interna del grupo
+                from collections import defaultdict
+                modo_est = (asig.modo_estructura or '').upper()
+                docs_borrador_db = list(Documento.objects.filter(grupo=grupo, estado='pendiente').order_by('id')) if grupo else []
 
-                estado_doc = 'incompleto' if es_incompleto else 'confirmado'
-
-                historial = []
-                if asig.estructura_paginas:
-                    historial.append({'accion': 'estructura_caras', 'detalle': asig.estructura_paginas})
-                if asig.alerta_origen_mixto:
-                    historial.append({'accion': 'alerta_origen_mixto', 'detalle': 'Páginas provienen de PDFs distintos confirmadas por el usuario'})
-                if es_incompleto:
-                    historial.append({'accion': 'estado_incompleto', 'motivo': 'Documento confirmado con slots vacíos o incompletos'})
-
-                doc = Documento.objects.create(
-                    unidad=unidad,
-                    lote=lote,
-                    persona=getattr(lote, 'persona', None),
-                    tipo_documento=tipo,
-                    es_doble_cara=es_doble,
-                    nombre_final=nombre_final_doc,
-                    estado=estado_doc,
-                    archivo_original=archivo_origen,
-                    subido_por=lote.subido_por,
-                    pagina_numero=p_num,
-                    texto_extraido=txt_extraido,
-                    phash=p_hash,
-                    historial_clasificacion=historial,
-                )
-                doc.paginas.set(pags_grupo)
-
-                # Compilar PDF único con las páginas asociadas en MinIO
-                try:
-                    import fitz
-                    from apps.storage.services import MinIOService
-                    storage = MinIOService()
-                    nuevo_pdf = fitz.open()
-
+                # Agrupar páginas por su rol de bloque (orden = 1 para Página 1, orden = 2 para Página 2, etc.)
+                bloques_por_orden = defaultdict(list)
+                if orden_dict:
                     for p in pags_grupo:
-                        if getattr(p, 'pdf_origen', None):
-                            pdf_bytes = storage.get_file(p.pdf_origen)
-                            src_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                            p_idx = (p.nro_pagina_en_pdf or 1) - 1
-                            if 0 <= p_idx < len(src_doc):
-                                nuevo_pdf.insert_pdf(src_doc, from_page=p_idx, to_page=p_idx)
-                            src_doc.close()
+                        bloques_por_orden[orden_dict.get(p.id, 1)].append(p)
+                ordenes_unicos = sorted(bloques_por_orden.keys())
+                es_concatenacion_por_bloques = (
+                    modo_est not in ('INDEPENDIENTE', 'MIXTA', 'MIXTO')
+                    and len(ordenes_unicos) >= 2
+                    and any(len(lista) > 1 for lista in bloques_por_orden.values())
+                )
 
-                    if len(nuevo_pdf) > 0:
-                        compilado_bytes = nuevo_pdf.tobytes()
-                        cod_folder = getattr(getattr(lote, 'persona', None), 'codigo', None) or f"unidad_{getattr(unidad, 'codigo', 'general')}"
-                        nombre_pdf_salida = f"doc_{doc.id}_{tipo.slug if tipo else 'general'}.pdf"
-                        key_compilado = storage.upload_pdf(cod_folder, nombre_pdf_salida, compilado_bytes)
-                        doc.archivo_original = key_compilado
-                        doc.save(update_fields=['archivo_original'])
-                    nuevo_pdf.close()
-                except Exception:
-                    pass
+                bloques_documentos = []
+                if doc_idx_dict:
+                    por_doc = defaultdict(list)
+                    for p in pags_grupo:
+                        por_doc[doc_idx_dict.get(p.id, p.id)].append(p)
+                    for _, pags_b in sorted(por_doc.items(), key=lambda kv: orden_dict.get(kv[1][0].id, 999)):
+                        es_d = len(pags_b) == 2 and any(
+                            'reverso' in slot_dict.get(x.id, '').lower() or 'anverso' in slot_dict.get(x.id, '').lower() or es_doble_default
+                            for x in pags_b
+                        )
+                        bloques_documentos.append({'paginas': pags_b, 'es_doble_cara': es_d})
+                elif es_concatenacion_por_bloques:
+                    # Emparejar la i-ésima página del Bloque 1 (Página 1) con la i-ésima página del Bloque 2 (Página 2), etc.
+                    listas_bloques = [
+                        sorted(bloques_por_orden[ord_val], key=lambda x: (x.nro_pagina_en_pdf or 0, x.id))
+                        for ord_val in ordenes_unicos
+                    ]
+                    usados_ids = set()
+
+                    # 1. Emparejar primero páginas que provengan del mismo pdf_origen
+                    for p1 in listas_bloques[0]:
+                        if not getattr(p1, 'pdf_origen', None):
+                            continue
+                        tupla = [p1]
+                        for b_idx in range(1, len(listas_bloques)):
+                            cand = next(
+                                (
+                                    c for c in listas_bloques[b_idx]
+                                    if c.id not in usados_ids and getattr(c, 'pdf_origen', None) == p1.pdf_origen
+                                ),
+                                None,
+                            )
+                            if cand is not None:
+                                tupla.append(cand)
+                        if len(tupla) == len(listas_bloques):
+                            for t_p in tupla:
+                                usados_ids.add(t_p.id)
+                            es_d = (modo_est in ('ANVERSO_REVERSO', 'DOBLE_CARA') or es_doble_default) and len(tupla) == 2
+                            bloques_documentos.append({'paginas': tupla, 'es_doble_cara': es_d})
+
+                    # 2. Emparejar páginas restantes posicionalmente entre los bloques
+                    restantes_bloques = [
+                        [p for p in lista if p.id not in usados_ids]
+                        for lista in listas_bloques
+                    ]
+                    max_rest = max((len(l) for l in restantes_bloques), default=0)
+                    for i_pos in range(max_rest):
+                        tupla = [
+                            restantes_bloques[b_idx][i_pos]
+                            for b_idx in range(len(restantes_bloques))
+                            if i_pos < len(restantes_bloques[b_idx])
+                        ]
+                        if tupla:
+                            es_d = (modo_est in ('ANVERSO_REVERSO', 'DOBLE_CARA') or es_doble_default) and len(tupla) == 2
+                            bloques_documentos.append({'paginas': tupla, 'es_doble_cara': es_d})
+                elif modo_est in ('MIXTA', 'MIXTO'):
+                    i_p = 0
+                    while i_p < len(pags_grupo):
+                        p_curr = pags_grupo[i_p]
+                        s_curr = slot_dict.get(p_curr.id, '').lower()
+                        if i_p + 1 < len(pags_grupo):
+                            p_next = pags_grupo[i_p + 1]
+                            s_next = slot_dict.get(p_next.id, '').lower()
+                            if ('anverso' in s_curr or 'lado a' in s_curr) and ('reverso' in s_next or 'lado b' in s_next):
+                                bloques_documentos.append({'paginas': [p_curr, p_next], 'es_doble_cara': True})
+                                i_p += 2
+                                continue
+                        bloques_documentos.append({'paginas': [p_curr], 'es_doble_cara': False})
+                        i_p += 1
+                elif modo_est in ('SECUENCIAL', 'INDEPENDIENTE') and not es_doble_default:
+                    if modo_est == 'SECUENCIAL' and docs_borrador_db and any(d.paginas.count() > 1 for d in docs_borrador_db):
+                        for db_doc in docs_borrador_db:
+                            pags_b = [p for p in db_doc.get_paginas_ordenadas() if p in pags_grupo]
+                            if pags_b:
+                                bloques_documentos.append({'paginas': pags_b, 'es_doble_cara': bool(db_doc.es_doble_cara)})
+                    else:
+                        for p_curr in pags_grupo:
+                            bloques_documentos.append({'paginas': [p_curr], 'es_doble_cara': False})
+                elif modo_est in ('ANVERSO_REVERSO', 'DOBLE_CARA') or (es_doble_default and modo_est != 'MULTIPAGINA'):
+                    for i_p in range(0, len(pags_grupo), 2):
+                        par = pags_grupo[i_p:i_p + 2]
+                        bloques_documentos.append({'paginas': par, 'es_doble_cara': True})
+                elif modo_est == 'MULTIPAGINA':
+                    bloques_documentos.append({'paginas': pags_grupo, 'es_doble_cara': False})
+                elif docs_borrador_db:
+                    for db_doc in docs_borrador_db:
+                        pags_b = [p for p in db_doc.get_paginas_ordenadas() if p in pags_grupo]
+                        if pags_b:
+                            bloques_documentos.append({'paginas': pags_b, 'es_doble_cara': bool(db_doc.es_doble_cara)})
+                else:
+                    for p_curr in pags_grupo:
+                        bloques_documentos.append({'paginas': [p_curr], 'es_doble_cara': False})
+
+                if not bloques_documentos:
+                    bloques_documentos = [{'paginas': pags_grupo, 'es_doble_cara': es_doble_default}]
+
+                # Limpiar borradores previos del grupo antes de materializar los documentos confirmados
+                if docs_borrador_db:
+                    Documento.objects.filter(id__in=[d.id for d in docs_borrador_db]).delete()
+
+                for bloque in bloques_documentos:
+                    pags_doc = bloque['paginas']
+                    es_doble_doc = bool(bloque['es_doble_cara'])
+
+                    es_incompleto = bool(asig.esta_incompleto)
+                    if (modo_est == 'ANVERSO_REVERSO' or es_doble_doc) and len(pags_doc) < 2:
+                        es_incompleto = True
+                    elif modo_est == 'MULTIPAGINA' and asig.slots_esperados and len(pags_doc) < asig.slots_esperados:
+                        es_incompleto = True
+
+                    estado_doc = 'incompleto' if es_incompleto else 'confirmado'
+                    archivo_origen = pags_doc[0].pdf_origen if (pags_doc and getattr(pags_doc[0], 'pdf_origen', None)) else lote.nombre_archivo_original
+                    p_num = pags_doc[0].nro_pagina_en_pdf if pags_doc else 1
+                    p_hash = pags_doc[0].phash if pags_doc else None
+                    txt_extraido = '\n'.join(p.texto_ocr for p in pags_doc if p.texto_ocr)
+
+                    historial = []
+                    if asig.alerta_origen_mixto:
+                        historial.append({'accion': 'alerta_origen_mixto', 'detalle': 'Páginas provienen de PDFs distintos confirmadas por el usuario'})
+                    if es_incompleto:
+                        historial.append({'accion': 'estado_incompleto', 'motivo': 'Documento confirmado con slots vacíos o incompletos'})
+
+                    doc = Documento.objects.create(
+                        unidad=unidad,
+                        lote=lote,
+                        grupo=grupo,
+                        persona=getattr(lote, 'persona', None),
+                        tipo_documento=tipo,
+                        es_doble_cara=es_doble_doc,
+                        nombre_final=nombre_final_doc,
+                        estado=estado_doc,
+                        archivo_original=archivo_origen,
+                        subido_por=lote.subido_por,
+                        pagina_numero=p_num,
+                        texto_extraido=txt_extraido,
+                        phash=p_hash,
+                        historial_clasificacion=historial,
+                    )
+                    # RF-28: Guardar páginas en documentos_paginas con su columna `orden` (1, 2, ...)
+                    doc.set_paginas_ordenadas(pags_doc)
+
+                    # RT-07 y RF-32: Generar PDF concatenado por Documento y subirlo a MinIO en lotes/{loteId}/documentos/{documentoId}.pdf
+                    try:
+                        import fitz
+                        from apps.storage.services import MinIOService
+                        storage = MinIOService()
+                        nuevo_pdf = fitz.open()
+
+                        for p in pags_doc:
+                            if getattr(p, 'pdf_origen', None):
+                                pdf_bytes = storage.get_file(p.pdf_origen)
+                                src_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                                p_idx = (p.nro_pagina_en_pdf or 1) - 1
+                                if 0 <= p_idx < len(src_doc):
+                                    nuevo_pdf.insert_pdf(src_doc, from_page=p_idx, to_page=p_idx)
+                                src_doc.close()
+
+                        if len(nuevo_pdf) > 0:
+                            compilado_bytes = nuevo_pdf.tobytes()
+                            key_compilado = storage.upload_lote_documento_pdf(lote.id, doc.id, compilado_bytes)
+                            doc.archivo_original = key_compilado
+                            doc.save(update_fields=['archivo_original'])
+                        nuevo_pdf.close()
+                    except Exception:
+                        pass
 
                 for p in pags_grupo:
                     p.estado = 'confirmada'
@@ -1023,7 +1179,9 @@ class Mutation:
             return OperacionDocumentoResponse(success=False, message="Página no encontrada")
 
         with transaction.atomic():
-            doc.paginas.add(pagina)
+            pags_actuales = doc.get_paginas_ordenadas()
+            pags_nuevas = pags_actuales + [pagina]
+            doc.set_paginas_ordenadas(pags_nuevas)
             pagina.estado = 'confirmada'
             pagina.save(update_fields=['estado'])
 
@@ -1032,7 +1190,7 @@ class Mutation:
             hist.append({
                 'accion': 'asignar_slot_revision',
                 'pagina_id': pagina.id,
-                'slot': slot or f'Pág. {doc.paginas.count()}',
+                'slot': slot or f'Pág. {len(pags_nuevas)}',
             })
             doc.historial_clasificacion = hist
             doc.estado = 'confirmado'  # Al completar slot, pasa a confirmado
@@ -1045,7 +1203,7 @@ class Mutation:
                 storage = MinIOService()
                 nuevo_pdf = fitz.open()
 
-                for p in doc.paginas.all().order_by('nro_pagina_en_pdf'):
+                for p in doc.get_paginas_ordenadas():
                     if getattr(p, 'pdf_origen', None):
                         pdf_bytes = storage.get_file(p.pdf_origen)
                         src_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -1056,10 +1214,13 @@ class Mutation:
 
                 if len(nuevo_pdf) > 0:
                     compilado_bytes = nuevo_pdf.tobytes()
-                    persona = getattr(doc.lote, 'persona', None)
-                    cod_folder = getattr(persona, 'codigo', None) or f"unidad_{getattr(unidad, 'codigo', 'general')}"
-                    nombre_pdf_salida = f"doc_{doc.id}_{doc.tipo_documento.slug if doc.tipo_documento else 'general'}.pdf"
-                    key_compilado = storage.upload_pdf(cod_folder, nombre_pdf_salida, compilado_bytes)
+                    if doc.lote_id:
+                        key_compilado = storage.upload_lote_documento_pdf(doc.lote_id, doc.id, compilado_bytes)
+                    else:
+                        persona = getattr(doc.lote, 'persona', None)
+                        cod_folder = getattr(persona, 'codigo', None) or f"unidad_{getattr(unidad, 'codigo', 'general')}"
+                        nombre_pdf_salida = f"doc_{doc.id}_{doc.tipo_documento.slug if doc.tipo_documento else 'general'}.pdf"
+                        key_compilado = storage.upload_pdf(cod_folder, nombre_pdf_salida, compilado_bytes)
                     doc.archivo_original = key_compilado
                     doc.save(update_fields=['archivo_original'])
                 nuevo_pdf.close()

@@ -112,6 +112,8 @@ class Grupo(models.Model):
         ('coincide_con_tipo', 'Coincide con tipo'),
         ('confirmado', 'Confirmado'),
         ('rechazado', 'Rechazado'),
+        ('fusionado', 'Fusionado'),
+        ('descartadas', 'Descartadas'),
     ]
 
     unidad = models.ForeignKey(
@@ -217,6 +219,9 @@ class Documento(models.Model):
     lote = models.ForeignKey(
         Lote, on_delete=models.CASCADE, null=True, blank=True, related_name='documentos', verbose_name='Lote'
     )
+    grupo = models.ForeignKey(
+        Grupo, on_delete=models.SET_NULL, null=True, blank=True, related_name='documentos', verbose_name='Grupo'
+    )
     tipo_documento = models.ForeignKey(
         TipoDocumento, on_delete=models.SET_NULL, null=True, blank=True, related_name='documentos'
     )
@@ -278,6 +283,33 @@ class Documento(models.Model):
     def total_paginas(self):
         count = self.paginas.count()
         return count if count > 0 else 1
+
+    def set_paginas_ordenadas(self, paginas_ordenadas):
+        """Asigna las páginas al documento y actualiza la columna `orden` en `documentos_paginas`."""
+        from django.db import connection
+
+        paginas_list = list(paginas_ordenadas)
+        self.paginas.set(paginas_list)
+        if not paginas_list or not self.id:
+            return
+        with connection.cursor() as cursor:
+            for idx, pag in enumerate(paginas_list, start=1):
+                pag_id = pag.id if hasattr(pag, 'id') else int(pag)
+                cursor.execute(
+                    "UPDATE documentos_paginas SET orden = %s WHERE documento_id = %s AND pagina_id = %s",
+                    [idx, self.id, pag_id],
+                )
+
+    def get_paginas_ordenadas(self):
+        """Devuelve las páginas del documento ordenadas por `documentos_paginas.orden`."""
+        if not self.id:
+            return []
+        return list(
+            self.paginas.extra(
+                select={'_orden_dp': 'documentos_paginas.orden'},
+                order_by=['_orden_dp', 'paginas.nro_pagina_en_pdf', 'paginas.id'],
+            )
+        )
 
     def save(self, *args, **kwargs):
         if not self.unidad_id:

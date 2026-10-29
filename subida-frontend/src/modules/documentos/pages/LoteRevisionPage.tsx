@@ -383,9 +383,6 @@ export function LoteRevisionPage() {
                               {pag.pdfOrigen}
                             </span>
                           )}
-                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                            {pag.textoOcr ? pag.textoOcr.slice(0, 45) : 'Sin texto OCR'}
-                          </p>
                         </div>
 
                         {docSeleccionadoParaAsignar ? (
