@@ -7,6 +7,7 @@ from config.schema import schema
 from apps.documentos.views import (
     UploadPDFView, UploadBatchPDFView,
     IniciarLoteView, UploadLotePDFView, AgruparLoteView,
+    DescartarPaginaLoteView, FusionarGruposLoteView, EstructuraGrupoView,
     DocumentoFileView, DocumentoOriginalView, DocumentoThumbnailView,
     PaginaThumbnailView, PaginaFileView,
 )
@@ -42,6 +43,9 @@ urlpatterns = [
     path('api/upload/iniciar-lote/', csrf_exempt(IniciarLoteView.as_view()), name='iniciar-lote'),
     path('api/upload/lote/<int:lote_id>/pdf/', csrf_exempt(UploadLotePDFView.as_view()), name='upload-lote-pdf'),
     path('api/upload/lote/<int:lote_id>/agrupar/', csrf_exempt(AgruparLoteView.as_view()), name='agrupar-lote'),
+    path('api/upload/lote/<int:lote_id>/descartar-pagina/', csrf_exempt(DescartarPaginaLoteView.as_view()), name='descartar-pagina-lote'),
+    path('api/upload/lote/<int:lote_id>/fusionar-grupos/', csrf_exempt(FusionarGruposLoteView.as_view()), name='fusionar-grupos-lote'),
+    path('api/upload/grupo/<int:grupo_id>/estructura/', csrf_exempt(EstructuraGrupoView.as_view()), name='estructura-grupo'),
     path('api/documents/<int:doc_id>/file/', DocumentoFileView.as_view(), name='doc-file'),
     path('api/documents/<int:doc_id>/original/', DocumentoOriginalView.as_view(), name='doc-original'),
     path('api/documents/<int:doc_id>/thumbnail/', DocumentoThumbnailView.as_view(), name='doc-thumbnail'),

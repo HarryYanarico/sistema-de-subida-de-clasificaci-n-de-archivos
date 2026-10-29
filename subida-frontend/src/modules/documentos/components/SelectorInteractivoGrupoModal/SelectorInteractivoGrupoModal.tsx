@@ -20,7 +20,10 @@ import {
 } from 'lucide-react'
 import { Grupo, Pagina } from '@app-types/documento.types'
 import { DecisionGrupo } from '../../hooks/useAgruparLote'
-import { getPaginaThumbnailUrl } from '../../services/upload.service'
+import {
+  getPaginaThumbnailUrl,
+  formatearOrigenPagina,
+} from '../../services/upload.service'
 
 const CARDS_POR_PAGINA = 12
 
@@ -36,6 +39,10 @@ export interface SelectorInteractivoGrupoModalProps {
     grupoDestinoId: number,
     slotDestino?: string
   ) => void
+  onFusionarMultiples?: (
+    gruposOrigenIds: number[],
+    grupoDestinoId: number
+  ) => void
 }
 
 export function SelectorInteractivoGrupoModal({
@@ -47,10 +54,12 @@ export function SelectorInteractivoGrupoModal({
   decisiones,
   onCerrar,
   onSeleccionarDestino,
+  onFusionarMultiples,
 }: SelectorInteractivoGrupoModalProps) {
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'cercanos' | 'mismo_pdf' | 'con_slots'>('todos')
   const [paginaInterna, setPaginaInterna] = useState(1)
+  const [seleccionadosFusion, setSeleccionadosFusion] = useState<number[]>([])
 
   // Obtener grupo de origen e índice
   const idxOrigen = useMemo(() => {
@@ -60,9 +69,9 @@ export function SelectorInteractivoGrupoModal({
   const grupoOrigen = grupos[idxOrigen]
   const pdfOrigenRef = paginaOrigen?.pdfOrigen || grupoOrigen?.paginas?.[0]?.pdfOrigen || ''
 
-  // Filtrar grupos que no sean el grupo de origen
+  // Filtrar grupos que no sean el grupo de origen ni el grupo especial Descartadas
   const otrosGrupos = useMemo(() => {
-    return grupos.filter((g) => g.id !== grupoOrigenId)
+    return grupos.filter((g) => g.id !== grupoOrigenId && g.estado !== 'descartadas')
   }, [grupos, grupoOrigenId])
 
   // Aplicar filtros y búsqueda en tiempo real
@@ -121,28 +130,67 @@ export function SelectorInteractivoGrupoModal({
   }, [gruposFiltrados, paginaInterna])
 
   const handleSeleccionar = (destId: number, slot?: string) => {
+    setSeleccionadosFusion([])
     onSeleccionarDestino(destId, slot)
+    onCerrar()
+  }
+
+  const toggleSeleccionFusion = (id: number) => {
+    setSeleccionadosFusion((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
+
+  const handleConfirmarFusionMultiple = () => {
+    if (seleccionadosFusion.length === 0) return
+    if (onFusionarMultiples) {
+      onFusionarMultiples(seleccionadosFusion, grupoOrigenId)
+    } else {
+      seleccionadosFusion.forEach((id) => onSeleccionarDestino(id))
+    }
+    setSeleccionadosFusion([])
     onCerrar()
   }
 
   const numVisibleOrigen = idxOrigen >= 0 ? idxOrigen + 1 : '?'
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onCerrar()}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          setSeleccionadosFusion([])
+          onCerrar()
+        }
+      }}
+    >
       <DialogContent className="sm:max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <div className="flex items-center gap-2 text-primary">
-            <Layers className="h-5 w-5" />
-            <DialogTitle className="text-lg">
-              {modo === 'mover_pagina'
-                ? `Mover Página #${paginaOrigen?.nroPaginaEnPdf || ''} a otro grupo`
-                : `Fusionar Grupo #${numVisibleOrigen} en otro grupo`}
-            </DialogTitle>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-primary">
+              <Layers className="h-5 w-5" />
+              <DialogTitle className="text-lg">
+                {modo === 'mover_pagina'
+                  ? `Mover Página #${paginaOrigen?.nroPaginaEnPdf || ''} a otro grupo`
+                  : `Concatenar / Fusionar grupos con Grupo #${numVisibleOrigen}`}
+              </DialogTitle>
+            </div>
+            {modo === 'fusionar_grupo' && seleccionadosFusion.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleConfirmarFusionMultiple}
+                className="h-8 text-xs font-semibold gap-1.5"
+              >
+                <ArrowRight className="h-3.5 w-3.5" />
+                Fusionar {seleccionadosFusion.length} grupo(s) seleccionado(s)
+              </Button>
+            )}
           </div>
           <DialogDescription className="text-xs">
             {modo === 'mover_pagina'
               ? 'Selecciona visualmente el grupo de destino donde deseas incorporar esta página.'
-              : 'Selecciona el grupo receptor. Todas las páginas de este grupo se moverán a ese destino y este grupo se disolverá.'}
+              : 'Selecciona uno o varios grupos para concatenar sus páginas dentro de este grupo. Los grupos absorbidos desaparecerán de la lista.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -283,12 +331,12 @@ export function SelectorInteractivoGrupoModal({
                         <span className="text-xs font-bold block truncate" title={nombreDoc}>
                           {nombreDoc}
                         </span>
-                        {primeraPag?.pdfOrigen && (
+                        {primeraPag && (
                           <span
                             className="text-[9px] text-muted-foreground font-mono block truncate"
-                            title={primeraPag.pdfOrigen}
+                            title={formatearOrigenPagina(primeraPag.pdfOrigen, primeraPag.nroPaginaEnPdf)}
                           >
-                            {primeraPag.pdfOrigen}
+                            {formatearOrigenPagina(primeraPag.pdfOrigen, primeraPag.nroPaginaEnPdf)}
                           </span>
                         )}
                       </div>
@@ -318,14 +366,29 @@ export function SelectorInteractivoGrupoModal({
                           </Button>
                         </>
                       ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => handleSeleccionar(g.id)}
-                          className="w-full h-7 text-xs gap-1 font-semibold"
-                        >
-                          <ArrowRight className="h-3.5 w-3.5" /> Fusionar aquí
-                        </Button>
+                        <div className="space-y-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSeleccionar(g.id)}
+                            className="w-full h-7 text-xs gap-1 font-semibold"
+                          >
+                            <ArrowRight className="h-3.5 w-3.5" /> Fusionar ahora
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => toggleSeleccionFusion(g.id)}
+                            className={`w-full py-1 px-2 rounded text-[10px] font-medium border transition-colors cursor-pointer ${
+                              seleccionadosFusion.includes(g.id)
+                                ? 'bg-primary/15 border-primary text-primary font-semibold'
+                                : 'bg-muted/30 hover:bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {seleccionadosFusion.includes(g.id)
+                              ? '☑ Seleccionado para fusión múltiple'
+                              : '☐ Añadir a fusión múltiple'}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

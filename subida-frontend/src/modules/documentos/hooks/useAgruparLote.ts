@@ -10,6 +10,11 @@ import { Grupo, Pagina, ModoEstructura } from '@app-types/documento.types'
 import { TipoDocumento } from '@app-types/tipo-documento.types'
 import { sanitizarNombreTipoDocumento } from '@/utils/validators'
 import { ItemPortapapeles } from '../components/PortapapelesFlotante/PortapapelesFlotante'
+import {
+  descartarPaginaLote,
+  fusionarGruposLote,
+  guardarEstructuraGrupo,
+} from '../services/upload.service'
 
 export interface DecisionGrupo {
   modo: 'sugerido' | 'existente' | 'nuevo'
@@ -21,6 +26,7 @@ export interface DecisionGrupo {
   esMultipagina?: boolean
   modoEstructura?: ModoEstructura
   slotsEsperados?: number
+  ordenPaginas?: Record<number, number>
   etiquetasPaginas?: Record<number, string>
   slotsPaginas?: Record<number, string>
   alertaOrigenMixto?: boolean
@@ -147,7 +153,7 @@ export function useAgruparLote(loteId?: string) {
     return () => clearTimeout(timer)
   }, [decisiones, gruposLocales, loteId, guardarBorradorMutation, grupos])
 
-  // Inicializar decisiones semánticas de grupos (slots y modos)
+  // Inicializar decisiones de grupos: por defecto SIN concatenación (las páginas de un grupo son ejemplares similares independientes)
   useEffect(() => {
     if (!grupos.length) return
 
@@ -159,16 +165,7 @@ export function useAgruparLote(loteId?: string) {
         if (inicial[g.id]) continue
 
         modificado = true
-        const tieneParejaSugerida = Boolean(g.parejasSugeridas && g.parejasSugeridas.length > 0)
-        const pags = g.paginas || []
-        const totalPags = pags.length
-
-        let modoEstructura: ModoEstructura = 'INDEPENDIENTE'
-        if (tieneParejaSugerida || totalPags === 2) {
-          modoEstructura = 'ANVERSO_REVERSO'
-        } else if (totalPags > 2) {
-          modoEstructura = 'MULTIPAGINA'
-        }
+        const modoEstructura: ModoEstructura = 'INDEPENDIENTE'
 
         const modoInicial =
           tiposExistentes.length > 0 && g.tipoDocumentoSugerido ? 'sugerido' : 'nuevo'
@@ -177,34 +174,18 @@ export function useAgruparLote(loteId?: string) {
             ? Number(g.tipoDocumentoSugerido.id)
             : null
 
-        const slotsIniciales: Record<number, string> = {}
-        const etiquetasIniciales: Record<number, string> = {}
-
-        pags.forEach((p, idx) => {
-          if (modoEstructura === 'ANVERSO_REVERSO') {
-            const slot = idx === 0 ? 'Anverso' : 'Reverso'
-            slotsIniciales[p.id] = slot
-            etiquetasIniciales[p.id] = idx === 0 ? 'Lado A (Anverso)' : 'Lado B (Reverso)'
-          } else {
-            const slot = `Pág. ${idx + 1}`
-            slotsIniciales[p.id] = slot
-            etiquetasIniciales[p.id] = slot
-          }
-        })
-
         inicial[g.id] = {
           modo: modoInicial,
           tipoId: tipoIdInicial,
           nombreNuevo: '',
           confirmado: false,
-          esDobleCara: modoEstructura === 'ANVERSO_REVERSO',
-          formatoCaras:
-            modoEstructura === 'ANVERSO_REVERSO' ? 'anverso_reverso' : 'paginas_correlativas',
-          esMultipagina: modoEstructura === 'MULTIPAGINA',
+          esDobleCara: false,
+          formatoCaras: 'paginas_correlativas',
+          esMultipagina: false,
           modoEstructura,
-          slotsEsperados: modoEstructura === 'ANVERSO_REVERSO' ? 2 : totalPags || 1,
-          etiquetasPaginas: etiquetasIniciales,
-          slotsPaginas: slotsIniciales,
+          slotsEsperados: 1,
+          etiquetasPaginas: {},
+          slotsPaginas: {},
           alertaOrigenMixto: false,
         }
       }
@@ -224,6 +205,172 @@ export function useAgruparLote(loteId?: string) {
     }
     return Array.from(nombres)
   }, [decisiones])
+
+  // RF-14: Detectar nombres duplicados entre grupos del mismo lote
+  const gruposConNombreDuplicado = useMemo(() => {
+    const conteoPorNombre = new Map<string, number[]>()
+
+    for (const g of grupos) {
+      const dec = decisiones[g.id]
+      if (!dec) continue
+
+      let nombreResuelto = ''
+      if (dec.modo === 'nuevo' && dec.nombreNuevo?.trim()) {
+        nombreResuelto = dec.nombreNuevo.trim().toUpperCase()
+      } else if (dec.modo === 'existente' && dec.tipoId) {
+        const tipo = tiposExistentes.find((t) => Number(t.id) === Number(dec.tipoId))
+        if (tipo?.nombre) nombreResuelto = tipo.nombre.trim().toUpperCase()
+      } else if (dec.modo === 'sugerido' && dec.confirmado && g.tipoDocumentoSugerido?.nombre) {
+        nombreResuelto = g.tipoDocumentoSugerido.nombre.trim().toUpperCase()
+      }
+
+      if (nombreResuelto) {
+        const lista = conteoPorNombre.get(nombreResuelto) || []
+        lista.push(g.id)
+        conteoPorNombre.set(nombreResuelto, lista)
+      }
+    }
+
+    const duplicados = new Set<number>()
+    for (const ids of conteoPorNombre.values()) {
+      if (ids.length > 1) {
+        ids.forEach((id) => duplicados.add(id))
+      }
+    }
+    return duplicados
+  }, [grupos, decisiones, tiposExistentes])
+
+  const tieneNombresDuplicados = gruposConNombreDuplicado.size > 0
+
+  // Helper para persistir la estructura interna en el backend (RT-05, RF-28)
+  const sincronizarEstructuraGrupo = useCallback(
+    (
+      grupoId: number,
+      pags: Pagina[],
+      modo: ModoEstructura,
+      slotsPaginas?: Record<number, string>,
+      ordenPaginas?: Record<number, number>
+    ) => {
+      if (!pags || pags.length === 0) return
+
+      const documentosPayload: { es_doble_cara: boolean; pagina_ids: number[] }[] = []
+
+      // Verificar si existen bloques de concatenación por rol de página (Página 1, Página 2, etc.)
+      const bloquesMap = new Map<number, Pagina[]>()
+      if (ordenPaginas && Object.keys(ordenPaginas).length > 0 && modo !== 'INDEPENDIENTE') {
+        pags.forEach((p) => {
+          const ord = ordenPaginas[p.id] || 1
+          const lista = bloquesMap.get(ord) || []
+          lista.push(p)
+          bloquesMap.set(ord, lista)
+        })
+      }
+
+      if (bloquesMap.size >= 2) {
+        const ordenesOrdenados = Array.from(bloquesMap.keys()).sort((a, b) => a - b)
+        const bloquesCopia = ordenesOrdenados.map((ord) =>
+          [...(bloquesMap.get(ord) || [])].sort(
+            (a, b) => (a.nroPaginaEnPdf || 0) - (b.nroPaginaEnPdf || 0)
+          )
+        )
+        const usados = new Set<number>()
+
+        // 1. Emparejar primero por mismo pdfOrigen
+        const bloque1 = bloquesCopia[0] || []
+        for (const p1 of bloque1) {
+          if (!p1.pdfOrigen) continue
+          const tupla: Pagina[] = [p1]
+          for (let bIdx = 1; bIdx < bloquesCopia.length; bIdx++) {
+            const candidato = bloquesCopia[bIdx].find(
+              (cand) => !usados.has(cand.id) && cand.pdfOrigen === p1.pdfOrigen
+            )
+            if (candidato) {
+              tupla.push(candidato)
+            }
+          }
+          if (tupla.length === bloquesCopia.length) {
+            tupla.forEach((t) => usados.add(t.id))
+            documentosPayload.push({
+              es_doble_cara: modo === 'ANVERSO_REVERSO' && tupla.length === 2,
+              pagina_ids: tupla.map((t) => t.id),
+            })
+          }
+        }
+
+        // 2. Emparejar páginas restantes posicionalmente entre bloques
+        const restantesPorBloque = bloquesCopia.map((lista) =>
+          lista.filter((p) => !usados.has(p.id))
+        )
+        const maxRestantes = Math.max(0, ...restantesPorBloque.map((l) => l.length))
+        for (let i = 0; i < maxRestantes; i++) {
+          const tupla: Pagina[] = []
+          for (let bIdx = 0; bIdx < restantesPorBloque.length; bIdx++) {
+            if (i < restantesPorBloque[bIdx].length) {
+              tupla.push(restantesPorBloque[bIdx][i])
+            }
+          }
+          if (tupla.length > 0) {
+            documentosPayload.push({
+              es_doble_cara: modo === 'ANVERSO_REVERSO' && tupla.length === 2,
+              pagina_ids: tupla.map((t) => t.id),
+            })
+          }
+        }
+      } else if (modo === 'ANVERSO_REVERSO') {
+        for (let i = 0; i < pags.length; i += 2) {
+          const par = pags.slice(i, i + 2)
+          documentosPayload.push({
+            es_doble_cara: par.length === 2,
+            pagina_ids: par.map((p) => p.id),
+          })
+        }
+      } else if (modo === 'MIXTA') {
+        let i = 0
+        while (i < pags.length) {
+          const p = pags[i]
+          const pSig = i + 1 < pags.length ? pags[i + 1] : null
+          const slotSig = pSig ? (slotsPaginas?.[pSig.id] || '').toUpperCase() : ''
+          const formaParConSiguiente =
+            slotSig.includes('REVERSO') || slotSig.includes('LADO B')
+          if (formaParConSiguiente && pSig) {
+            documentosPayload.push({
+              es_doble_cara: true,
+              pagina_ids: [p.id, pSig.id],
+            })
+            i += 2
+          } else {
+            documentosPayload.push({
+              es_doble_cara: false,
+              pagina_ids: [p.id],
+            })
+            i += 1
+          }
+        }
+      } else if (modo === 'MULTIPAGINA') {
+        documentosPayload.push({
+          es_doble_cara: false,
+          pagina_ids: pags.map((p) => p.id),
+        })
+      } else {
+        // SECUENCIAL sin bloques / INDEPENDIENTE
+        pags.forEach((p) => {
+          documentosPayload.push({
+            es_doble_cara: false,
+            pagina_ids: [p.id],
+          })
+        })
+      }
+
+      guardarEstructuraGrupo(grupoId, {
+        modo,
+        pagina_ids: pags.map((p) => p.id),
+        documentos: documentosPayload,
+      }).catch(() => {
+        // Error silencioso si es un grupo temporal aún no sincronizado
+      })
+    },
+    []
+  )
 
   // Validación de origen PDF (Punto C)
   const verificarOrigenYProceder = useCallback(
@@ -390,29 +537,140 @@ export function useAgruparLote(loteId?: string) {
     [grupos, decisiones]
   )
 
-  // Alternar modo de estructura y doble cara (Punto A)
+  // Alternar modo de estructura y doble cara (RF-27, RF-28, RT-05)
   const handleCambiarModoEstructura = useCallback(
     (grupoId: number, modo: ModoEstructura) => {
-      setDecisiones((prev) => {
-        const dec = prev[grupoId]
-        if (!dec) return prev
-        const g = grupos.find((item) => item.id === grupoId)
-        const pags = g?.paginas || []
+      const g = grupos.find((item) => item.id === grupoId)
+      const pags = g?.paginas || []
+      const decPrev = decisiones[grupoId]
+      const ordenPrevio = decPrev?.ordenPaginas || {}
+      const bloquesUnicosPrevios = new Set(Object.values(ordenPrevio))
+      const tieneBloquesConcatenados = bloquesUnicosPrevios.size >= 2
 
-        const slots: Record<number, string> = {}
-        const etiquetas: Record<number, string> = {}
+      const slots: Record<number, string> = {}
+      const etiquetas: Record<number, string> = {}
+      const ordenPaginas: Record<number, number> = {}
 
-        pags.forEach((p, idx) => {
-          if (modo === 'ANVERSO_REVERSO') {
-            const slot = idx === 0 ? 'Anverso' : 'Reverso'
-            slots[p.id] = slot
-            etiquetas[p.id] = idx === 0 ? 'Lado A (Anverso)' : 'Lado B (Reverso)'
+      if (modo === 'INDEPENDIENTE') {
+        if (tieneBloquesConcatenados) {
+          // Si había grupos concatenados (Bloque 2, Bloque 3...), devolver cada bloque concatenado a su propio grupo independiente
+          const bloquesOrdenados = Array.from(bloquesUnicosPrevios).sort((a, b) => a - b)
+          const primerBloque = bloquesOrdenados[0] || 1
+          const pagsPrimerBloque = pags.filter((p) => (ordenPrevio[p.id] || 1) === primerBloque)
+          const otrosBloques = bloquesOrdenados.slice(1)
+
+          if (pagsPrimerBloque.length > 0 && otrosBloques.length > 0) {
+            const gruposRestaurados: Grupo[] = []
+            otrosBloques.forEach((ordBloque, idxB) => {
+              const pagsBloque = pags.filter((p) => (ordenPrevio[p.id] || 1) === ordBloque)
+              if (pagsBloque.length > 0 && g) {
+                gruposRestaurados.push({
+                  id: Number(`${Date.now() % 1000000}${idxB + 1}${Math.floor(Math.random() * 100)}`),
+                  loteId: g.loteId,
+                  totalPaginas: pagsBloque.length,
+                  tipoDocumentoSugerido: null,
+                  estado: 'nuevo',
+                  paginas: pagsBloque,
+                })
+              }
+            })
+
+            setGruposLocales((prevGrupos) => {
+              const idxG = prevGrupos.findIndex((item) => item.id === grupoId)
+              if (idxG < 0) return prevGrupos
+              const gModificado: Grupo = {
+                ...prevGrupos[idxG],
+                paginas: pagsPrimerBloque,
+                totalPaginas: pagsPrimerBloque.length,
+              }
+              return [
+                ...prevGrupos.slice(0, idxG),
+                gModificado,
+                ...gruposRestaurados,
+                ...prevGrupos.slice(idxG + 1),
+              ]
+            })
+
+            setDecisiones((prev) => {
+              const dec = prev[grupoId] || {
+                modo: 'nuevo',
+                confirmado: false,
+                esDobleCara: false,
+              }
+              const next: Record<number, DecisionGrupo> = {
+                ...prev,
+                [grupoId]: {
+                  ...dec,
+                  modoEstructura: 'INDEPENDIENTE',
+                  esDobleCara: false,
+                  formatoCaras: 'paginas_correlativas',
+                  esMultipagina: false,
+                  slotsEsperados: 1,
+                  ordenPaginas: {},
+                  slotsPaginas: {},
+                  etiquetasPaginas: {},
+                },
+              }
+              gruposRestaurados.forEach((gr) => {
+                next[gr.id] = {
+                  modo: 'nuevo',
+                  nombreNuevo: '',
+                  confirmado: false,
+                  esDobleCara: false,
+                  formatoCaras: 'paginas_correlativas',
+                  modoEstructura: 'INDEPENDIENTE',
+                  slotsEsperados: 1,
+                  ordenPaginas: {},
+                  slotsPaginas: {},
+                  etiquetasPaginas: {},
+                }
+              })
+              return next
+            })
+
+            sincronizarEstructuraGrupo(grupoId, pagsPrimerBloque, 'INDEPENDIENTE', {}, {})
+            return
+          }
+        }
+
+        // Volver a estado sin concatenación: cada página es independiente (Página 1 de su propio documento)
+        pags.forEach((p) => {
+          ordenPaginas[p.id] = 1
+          slots[p.id] = 'Página 1'
+          etiquetas[p.id] = 'Muestra'
+        })
+      } else if (tieneBloquesConcatenados) {
+        // Preservar los bloques (Grupo 1 = Página 1, Grupo 2 = Página 2, etc.)
+        const totalBloques = bloquesUnicosPrevios.size
+        pags.forEach((p) => {
+          const ord = ordenPrevio[p.id] || 1
+          ordenPaginas[p.id] = ord
+          if (modo === 'ANVERSO_REVERSO' && totalBloques === 2) {
+            slots[p.id] = `Página ${ord}`
+            etiquetas[p.id] = ord === 1 ? 'Página 1 (Anverso)' : 'Página 2 (Reverso)'
           } else {
-            const slot = `Pág. ${idx + 1}`
-            slots[p.id] = slot
-            etiquetas[p.id] = slot
+            slots[p.id] = `Página ${ord}`
+            etiquetas[p.id] = `Página ${ord}`
           }
         })
+      } else {
+        // Grupo individual aún sin otro grupo concatenado: todas sus N páginas similares actúan como Bloque Página 1
+        pags.forEach((p) => {
+          ordenPaginas[p.id] = 1
+          slots[p.id] = 'Página 1'
+          etiquetas[p.id] =
+            modo === 'ANVERSO_REVERSO' ? 'Página 1 (Anverso)' : 'Página 1'
+        })
+      }
+
+      const numBloques = new Set(Object.values(ordenPaginas)).size || 1
+
+      setDecisiones((prev) => {
+        const dec = prev[grupoId] || {
+          modo: 'nuevo',
+          confirmado: false,
+          esDobleCara: false,
+        }
 
         return {
           ...prev,
@@ -420,21 +678,83 @@ export function useAgruparLote(loteId?: string) {
             ...dec,
             modoEstructura: modo,
             esDobleCara: modo === 'ANVERSO_REVERSO',
-            formatoCaras: modo === 'ANVERSO_REVERSO' ? 'anverso_reverso' : 'paginas_correlativas',
-            esMultipagina: modo === 'MULTIPAGINA',
-            slotsEsperados: modo === 'ANVERSO_REVERSO' ? 2 : pags.length || 1,
+            formatoCaras:
+              modo === 'ANVERSO_REVERSO'
+                ? 'anverso_reverso'
+                : modo === 'MIXTA'
+                  ? 'mixto'
+                  : 'paginas_correlativas',
+            esMultipagina: modo === 'MULTIPAGINA' || numBloques > 2,
+            slotsEsperados: modo === 'INDEPENDIENTE' ? 1 : Math.max(2, numBloques),
+            ordenPaginas: modo === 'INDEPENDIENTE' ? {} : ordenPaginas,
+            slotsPaginas: modo === 'INDEPENDIENTE' ? {} : slots,
+            etiquetasPaginas: modo === 'INDEPENDIENTE' ? {} : etiquetas,
+          },
+        }
+      })
+
+      sincronizarEstructuraGrupo(
+        grupoId,
+        pags,
+        modo,
+        modo === 'INDEPENDIENTE' ? {} : slots,
+        modo === 'INDEPENDIENTE' ? {} : ordenPaginas
+      )
+    },
+    [grupos, decisiones, sincronizarEstructuraGrupo]
+  )
+
+  // Alternar par Anverso/Reverso entre página actual y la siguiente en modo MIXTA (RF-27)
+  const handleToggleParMixto = useCallback(
+    (grupoId: number, indexPagina: number) => {
+      const g = grupos.find((item) => item.id === grupoId)
+      const pags = g?.paginas || []
+      if (indexPagina < 0 || indexPagina >= pags.length - 1) return
+
+      const pagActual = pags[indexPagina]
+      const pagSiguiente = pags[indexPagina + 1]
+
+      setDecisiones((prev) => {
+        const dec = prev[grupoId]
+        if (!dec) return prev
+        const slots = { ...(dec.slotsPaginas || {}) }
+        const etiquetas = { ...(dec.etiquetasPaginas || {}) }
+
+        const yaEsPar =
+          (slots[pagSiguiente.id] || '').toUpperCase().includes('REVERSO')
+
+        if (yaEsPar) {
+          slots[pagActual.id] = `Simple (${indexPagina + 1})`
+          etiquetas[pagActual.id] = `Simple (${indexPagina + 1})`
+          slots[pagSiguiente.id] = `Simple (${indexPagina + 2})`
+          etiquetas[pagSiguiente.id] = `Simple (${indexPagina + 2})`
+        } else {
+          slots[pagActual.id] = 'Anverso'
+          etiquetas[pagActual.id] = 'Lado A (Anverso)'
+          slots[pagSiguiente.id] = 'Reverso'
+          etiquetas[pagSiguiente.id] = 'Lado B (Reverso)'
+        }
+
+        sincronizarEstructuraGrupo(grupoId, pags, 'MIXTA', slots)
+
+        return {
+          ...prev,
+          [grupoId]: {
+            ...dec,
+            modoEstructura: 'MIXTA',
+            formatoCaras: 'mixto',
             slotsPaginas: slots,
             etiquetasPaginas: etiquetas,
           },
         }
       })
     },
-    [grupos]
+    [grupos, sincronizarEstructuraGrupo]
   )
 
   const handleToggleDobleCara = useCallback(
     (grupoId: number, checked: boolean) => {
-      handleCambiarModoEstructura(grupoId, checked ? 'ANVERSO_REVERSO' : 'MULTIPAGINA')
+      handleCambiarModoEstructura(grupoId, checked ? 'ANVERSO_REVERSO' : 'SECUENCIAL')
     },
     [handleCambiarModoEstructura]
   )
@@ -443,48 +763,110 @@ export function useAgruparLote(loteId?: string) {
     (grupoId: number, formato: 'anverso_reverso' | 'paginas_correlativas') => {
       handleCambiarModoEstructura(
         grupoId,
-        formato === 'anverso_reverso' ? 'ANVERSO_REVERSO' : 'MULTIPAGINA'
+        formato === 'anverso_reverso' ? 'ANVERSO_REVERSO' : 'SECUENCIAL'
       )
     },
     [handleCambiarModoEstructura]
   )
 
-  const handleInvertirCaras = useCallback((grupoId: number) => {
-    setGruposLocales((prev) =>
-      prev.map((g) => {
-        if (g.id !== grupoId) return g
-        const pags = [...(g.paginas || [])]
-        if (pags.length < 2) return g
-        pags.reverse()
-        return { ...g, paginas: pags }
-      })
-    )
+  const handleInvertirCaras = useCallback(
+    (grupoId: number) => {
+      const decActual = decisiones[grupoId]
+      const ordenPrevio = decActual?.ordenPaginas || {}
+      const bloquesUnicos = Array.from(new Set(Object.values(ordenPrevio))).sort((a, b) => a - b)
 
-    setDecisiones((prev) => {
-      const decActual = prev[grupoId]
-      if (!decActual) return prev
-      const etiqActuales = decActual.etiquetasPaginas || {}
-      const keys = Object.keys(etiqActuales).map(Number)
-      if (keys.length === 2) {
-        const [k1, k2] = keys
-        return {
-          ...prev,
-          [grupoId]: {
-            ...decActual,
-            etiquetasPaginas: {
-              [k1]: etiqActuales[k2],
-              [k2]: etiqActuales[k1],
+      let pagsNuevas: Pagina[] = []
+      const nuevoOrdenPaginas: Record<number, number> = {}
+      const nuevosSlots: Record<number, string> = {}
+      const nuevasEtiquetas: Record<number, string> = {}
+
+      setGruposLocales((prev) =>
+        prev.map((g) => {
+          if (g.id !== grupoId) return g
+          const pags = [...(g.paginas || [])]
+          if (pags.length < 2) return g
+
+          if (bloquesUnicos.length >= 2) {
+            // Invertir bloques completos (ej. Bloque Página 1 <-> Bloque Página 2) manteniendo el orden interno de cada bloque
+            const mapaInvertido = new Map<number, number>()
+            bloquesUnicos.forEach((ord, idx) => {
+              mapaInvertido.set(ord, bloquesUnicos[bloquesUnicos.length - 1 - idx])
+            })
+
+            const modoActual = decActual?.modoEstructura || 'SECUENCIAL'
+            pags.forEach((p) => {
+              const ordAnt = ordenPrevio[p.id] || 1
+              const ordNuevo = mapaInvertido.get(ordAnt) || 1
+              nuevoOrdenPaginas[p.id] = ordNuevo
+              nuevosSlots[p.id] = `Página ${ordNuevo}`
+              nuevasEtiquetas[p.id] =
+                modoActual === 'ANVERSO_REVERSO' && bloquesUnicos.length === 2
+                  ? ordNuevo === 1
+                    ? 'Página 1 (Anverso)'
+                    : 'Página 2 (Reverso)'
+                  : `Página ${ordNuevo}`
+            })
+
+            pags.sort((a, b) => (nuevoOrdenPaginas[a.id] || 1) - (nuevoOrdenPaginas[b.id] || 1))
+          } else {
+            pags.reverse()
+          }
+
+          pagsNuevas = pags
+          return { ...g, paginas: pags }
+        })
+      )
+
+      setDecisiones((prev) => {
+        const dec = prev[grupoId]
+        if (!dec) return prev
+        if (bloquesUnicos.length >= 2) {
+          return {
+            ...prev,
+            [grupoId]: {
+              ...dec,
+              ordenPaginas: nuevoOrdenPaginas,
+              slotsPaginas: nuevosSlots,
+              etiquetasPaginas: nuevasEtiquetas,
             },
-          },
+          }
         }
+        const etiqActuales = dec.etiquetasPaginas || {}
+        const keys = Object.keys(etiqActuales).map(Number)
+        if (keys.length === 2) {
+          const [k1, k2] = keys
+          return {
+            ...prev,
+            [grupoId]: {
+              ...dec,
+              etiquetasPaginas: {
+                [k1]: etiqActuales[k2],
+                [k2]: etiqActuales[k1],
+              },
+            },
+          }
+        }
+        return prev
+      })
+
+      if (pagsNuevas.length >= 2) {
+        const dec = decisiones[grupoId]
+        sincronizarEstructuraGrupo(
+          grupoId,
+          pagsNuevas,
+          dec?.modoEstructura || 'ANVERSO_REVERSO',
+          bloquesUnicos.length >= 2 ? nuevosSlots : dec?.slotsPaginas,
+          bloquesUnicos.length >= 2 ? nuevoOrdenPaginas : dec?.ordenPaginas
+        )
       }
-      return prev
-    })
-  }, [])
+    },
+    [decisiones, sincronizarEstructuraGrupo]
+  )
 
   // Mover página a la izquierda o derecha en la tira de páginas
   const handleMoverPagina = useCallback(
     (grupoId: number, indexActual: number, direccion: 'izquierda' | 'derecha') => {
+      let pagsActualizadas: Pagina[] = []
       setGruposLocales((prev) =>
         prev.map((g: Grupo) => {
           if (g.id !== grupoId) return g
@@ -494,11 +876,61 @@ export function useAgruparLote(loteId?: string) {
 
           const [movida] = pags.splice(indexActual, 1)
           pags.splice(indexDestino, 0, movida)
+          pagsActualizadas = pags
           return { ...g, paginas: pags }
         })
       )
+
+      if (pagsActualizadas.length > 0) {
+        const dec = decisiones[grupoId]
+        sincronizarEstructuraGrupo(
+          grupoId,
+          pagsActualizadas,
+          dec?.modoEstructura || 'SECUENCIAL',
+          dec?.slotsPaginas
+        )
+      }
     },
-    []
+    [decisiones, sincronizarEstructuraGrupo]
+  )
+
+  // RF-29: Reordenar páginas dentro del grupo arrastrando (drag and drop)
+  const handleReordenarPaginas = useCallback(
+    (grupoId: number, indexOrigen: number, indexDestino: number) => {
+      if (indexOrigen === indexDestino) return
+      let pagsActualizadas: Pagina[] = []
+
+      setGruposLocales((prev) =>
+        prev.map((g: Grupo) => {
+          if (g.id !== grupoId) return g
+          const pags = [...(g.paginas || [])]
+          if (
+            indexOrigen < 0 ||
+            indexOrigen >= pags.length ||
+            indexDestino < 0 ||
+            indexDestino >= pags.length
+          ) {
+            return g
+          }
+
+          const [movida] = pags.splice(indexOrigen, 1)
+          pags.splice(indexDestino, 0, movida)
+          pagsActualizadas = pags
+          return { ...g, paginas: pags }
+        })
+      )
+
+      if (pagsActualizadas.length > 0) {
+        const dec = decisiones[grupoId]
+        sincronizarEstructuraGrupo(
+          grupoId,
+          pagsActualizadas,
+          dec?.modoEstructura || 'SECUENCIAL',
+          dec?.slotsPaginas
+        )
+      }
+    },
+    [decisiones, sincronizarEstructuraGrupo]
   )
 
   // Cambiar etiqueta o slot de una página
@@ -579,14 +1011,17 @@ export function useAgruparLote(loteId?: string) {
           if (decOrigen) {
             const etiqOrigen = { ...(decOrigen.etiquetasPaginas || {}) }
             const slotsOrigen = { ...(decOrigen.slotsPaginas || {}) }
+            const ordenOrigen = { ...(decOrigen.ordenPaginas || {}) }
             delete etiqOrigen[paginaId]
             delete slotsOrigen[paginaId]
+            delete ordenOrigen[paginaId]
             next[grupoOrigenId] = {
               ...decOrigen,
+              ordenPaginas: ordenOrigen,
               etiquetasPaginas: etiqOrigen,
               slotsPaginas: slotsOrigen,
               esDobleCara: pagsOrigenRestantes.length === 2 && Boolean(decOrigen.esDobleCara),
-              esMultipagina: pagsOrigenRestantes.length > 2,
+              esMultipagina: Boolean(decOrigen.esMultipagina) && pagsOrigenRestantes.length > 2,
             }
           }
 
@@ -595,24 +1030,50 @@ export function useAgruparLote(loteId?: string) {
           }
 
           if (decDestino) {
+            const modoDest = decDestino.modoEstructura || 'INDEPENDIENTE'
             const etiqDestino = { ...(decDestino.etiquetasPaginas || {}) }
             const slotsDestino = { ...(decDestino.slotsPaginas || {}) }
+            const ordenDestinoMap = { ...(decDestino.ordenPaginas || {}) }
+
+            const matchBloque = slotDestino?.match(/(\d+)/)
             const esLadoB =
               slotDestino?.toLowerCase().includes('reverso') ||
               slotDestino?.toLowerCase().includes('lado b')
 
-            const slotNombre = slotDestino || `Pág. ${pagsDestinoNuevas.length}`
-            slotsDestino[paginaId] = slotNombre
-            etiqDestino[paginaId] = esLadoB ? 'Lado B (Reverso)' : slotNombre
+            if (modoDest === 'INDEPENDIENTE' && !esLadoB && !matchBloque) {
+              // Agregar como página similar del grupo sin activar concatenación secuencial
+              next[grupoDestinoId] = {
+                ...decDestino,
+                modoEstructura: 'INDEPENDIENTE',
+                esDobleCara: false,
+                esMultipagina: false,
+              }
+            } else {
+              const bloqueNum = matchBloque ? Number(matchBloque[1]) : esLadoB ? 2 : 1
+              const slotNombre = `Página ${bloqueNum}`
+              ordenDestinoMap[paginaId] = bloqueNum
+              slotsDestino[paginaId] = slotNombre
+              etiqDestino[paginaId] =
+                (modoDest === 'ANVERSO_REVERSO' || esLadoB) && bloqueNum === 2
+                  ? 'Página 2 (Reverso)'
+                  : slotNombre
 
-            next[grupoDestinoId] = {
-              ...decDestino,
-              etiquetasPaginas: etiqDestino,
-              slotsPaginas: slotsDestino,
-              esDobleCara:
-                pagsDestinoNuevas.length === 2 &&
-                (Boolean(decDestino.esDobleCara) || Boolean(esLadoB)),
-              esMultipagina: pagsDestinoNuevas.length > 2,
+              const nuevoModo: ModoEstructura =
+                modoDest === 'INDEPENDIENTE'
+                  ? esLadoB
+                    ? 'ANVERSO_REVERSO'
+                    : 'SECUENCIAL'
+                  : modoDest
+
+              next[grupoDestinoId] = {
+                ...decDestino,
+                modoEstructura: nuevoModo,
+                ordenPaginas: ordenDestinoMap,
+                etiquetasPaginas: etiqDestino,
+                slotsPaginas: slotsDestino,
+                esDobleCara: nuevoModo === 'ANVERSO_REVERSO',
+                esMultipagina: nuevoModo === 'MULTIPAGINA',
+              }
             }
           }
 
@@ -702,6 +1163,135 @@ export function useAgruparLote(loteId?: string) {
     [portapapeles, handleMoverPaginaAGrupo]
   )
 
+  // RF-22, RF-24, RF-25, RF-26, RT-04, RT-10: Fusionar múltiples grupos en el grupo destino con persistencia en backend
+  const ejecutarFusionMultiplesGrupos = useCallback(
+    async (gruposOrigenIds: number[], grupoDestinoId: number, comoLadoB?: boolean) => {
+      const idsLimpiados = gruposOrigenIds.filter((id) => id !== grupoDestinoId)
+      if (idsLimpiados.length === 0) return
+
+      if (loteId) {
+        try {
+          await fusionarGruposLote(loteId, grupoDestinoId, idsLimpiados)
+        } catch {
+          // Si falla la llamada de red o son IDs temporales, continuar actualización local y borrador
+        }
+      }
+
+      setGruposLocales((prev) => {
+        const gDest = prev.find((g) => g.id === grupoDestinoId)
+        if (!gDest) return prev
+
+        const setOrigen = new Set(idsLimpiados)
+        const gruposOrigenEncontrados: Grupo[] = []
+        const pagsExtra: Pagina[] = []
+        for (const idOrig of idsLimpiados) {
+          const gOrig = prev.find((g) => g.id === idOrig)
+          if (gOrig?.paginas && gOrig.paginas.length > 0) {
+            gruposOrigenEncontrados.push(gOrig)
+            pagsExtra.push(...gOrig.paginas)
+          }
+        }
+
+        if (pagsExtra.length === 0) return prev
+
+        const pagsDest = gDest.paginas || []
+        const pagsNuevas = [...pagsDest, ...pagsExtra]
+        const gDestModificado: Grupo = {
+          ...gDest,
+          paginas: pagsNuevas,
+          totalPaginas: pagsNuevas.length,
+        }
+
+        const nuevosGrupos = prev
+          .filter((g) => !setOrigen.has(g.id))
+          .map((g) => (g.id === grupoDestinoId ? gDestModificado : g))
+
+        setDecisiones((prevDec) => {
+          const decDest = prevDec[grupoDestinoId]
+          const next = { ...prevDec }
+
+          const ordenPaginas: Record<number, number> = {}
+          const slotsPaginas: Record<number, string> = {}
+          const etiquetasPaginas: Record<number, string> = {}
+
+          // 1. Todas las páginas del grupo destino mantienen su bloque previo o reciben bloque 1 (Página 1)
+          const ordenPrevDest = decDest?.ordenPaginas || {}
+          let maxOrdenActual = 1
+          pagsDest.forEach((p) => {
+            const ord = ordenPrevDest[p.id] || 1
+            ordenPaginas[p.id] = ord
+            if (ord > maxOrdenActual) maxOrdenActual = ord
+          })
+
+          // 2. Cada grupo origen recibe el siguiente bloque de página (ej. todas las páginas del Grupo 2 son Página 2)
+          gruposOrigenEncontrados.forEach((gOrig) => {
+            const decOrig = prevDec[gOrig.id]
+            const ordenPrevOrig = decOrig?.ordenPaginas || {}
+            const bloquesOrig = Array.from(
+              new Set((gOrig.paginas || []).map((p) => ordenPrevOrig[p.id] || 1))
+            ).sort((a, b) => a - b)
+
+            ;(gOrig.paginas || []).forEach((p) => {
+              const relIdx = Math.max(0, bloquesOrig.indexOf(ordenPrevOrig[p.id] || 1))
+              ordenPaginas[p.id] = maxOrdenActual + 1 + relIdx
+            })
+            maxOrdenActual += Math.max(1, bloquesOrig.length)
+          })
+
+          idsLimpiados.forEach((id) => delete next[id])
+
+          const totalBloques = new Set(Object.values(ordenPaginas)).size || 2
+          const nuevoModo: ModoEstructura =
+            comoLadoB
+              ? 'ANVERSO_REVERSO'
+              : totalBloques > 2
+                ? 'MULTIPAGINA'
+                : !decDest?.modoEstructura || decDest.modoEstructura === 'INDEPENDIENTE'
+                  ? 'SECUENCIAL'
+                  : decDest.modoEstructura
+
+          pagsNuevas.forEach((p) => {
+            const ord = ordenPaginas[p.id] || 1
+            slotsPaginas[p.id] = `Página ${ord}`
+            if (nuevoModo === 'ANVERSO_REVERSO' && totalBloques === 2) {
+              etiquetasPaginas[p.id] = ord === 1 ? 'Página 1 (Anverso)' : 'Página 2 (Reverso)'
+            } else {
+              etiquetasPaginas[p.id] = `Página ${ord}`
+            }
+          })
+
+          next[grupoDestinoId] = {
+            ...(decDest || {
+              modo: 'nuevo',
+              confirmado: false,
+              esDobleCara: false,
+            }),
+            modoEstructura: nuevoModo,
+            esDobleCara: nuevoModo === 'ANVERSO_REVERSO',
+            esMultipagina: nuevoModo === 'MULTIPAGINA' || totalBloques > 2,
+            slotsEsperados: totalBloques,
+            ordenPaginas,
+            slotsPaginas,
+            etiquetasPaginas,
+          }
+
+          sincronizarEstructuraGrupo(
+            grupoDestinoId,
+            pagsNuevas,
+            nuevoModo,
+            slotsPaginas,
+            ordenPaginas
+          )
+
+          return next
+        })
+
+        return nuevosGrupos
+      })
+    },
+    [loteId, sincronizarEstructuraGrupo]
+  )
+
   // Fusionar un grupo entero dentro de otro grupo
   const handleFusionarGrupos = useCallback(
     (grupoOrigenId: number, grupoDestinoId: number, comoLadoB?: boolean) => {
@@ -715,46 +1305,107 @@ export function useAgruparLote(loteId?: string) {
       if (pagsOrigen.length === 0) return
 
       const accion = () => {
-        setGruposLocales((prev) => {
-          const gOrig = prev.find((g) => g.id === grupoOrigenId)
-          const gDest = prev.find((g) => g.id === grupoDestinoId)
-          if (!gOrig || !gDest) return prev
-
-          const pagsNuevas = [...(gDest.paginas || []), ...(gOrig.paginas || [])]
-          const gDestModificado: Grupo = {
-            ...gDest,
-            paginas: pagsNuevas,
-            totalPaginas: pagsNuevas.length,
-          }
-
-          const nuevosGrupos = prev
-            .filter((g) => g.id !== grupoOrigenId)
-            .map((g) => (g.id === grupoDestinoId ? gDestModificado : g))
-
-          setDecisiones((prevDec) => {
-            const decDest = prevDec[grupoDestinoId]
-            const next = { ...prevDec }
-            delete next[grupoOrigenId]
-
-            if (decDest) {
-              next[grupoDestinoId] = {
-                ...decDest,
-                esDobleCara: pagsNuevas.length === 2 && Boolean(comoLadoB || decDest.esDobleCara),
-                esMultipagina: pagsNuevas.length > 2,
-              }
-            }
-
-            return next
-          })
-
-          return nuevosGrupos
-        })
+        void ejecutarFusionMultiplesGrupos([grupoOrigenId], grupoDestinoId, comoLadoB)
       }
 
       // Validar origen de la primera página del grupo
       verificarOrigenYProceder(pagsOrigen[0], gDestino, accion)
     },
-    [grupos, verificarOrigenYProceder]
+    [grupos, verificarOrigenYProceder, ejecutarFusionMultiplesGrupos]
+  )
+
+  // Fusionar múltiples grupos seleccionados hacia el grupo destino (RF-26)
+  const handleFusionarMultiplesGrupos = useCallback(
+    (gruposOrigenIds: number[], grupoDestinoId: number) => {
+      void ejecutarFusionMultiplesGrupos(gruposOrigenIds, grupoDestinoId, false)
+    },
+    [ejecutarFusionMultiplesGrupos]
+  )
+
+  // RF-16, RF-17, RF-18, RT-03, RT-09: Mover página al grupo "Descartadas" al final del lote
+  const handleDescartarPagina = useCallback(
+    async (grupoOrigenId: number, paginaId: number) => {
+      let grupoDescartadasBackendId: number | null = null
+      if (loteId) {
+        try {
+          const resp = await descartarPaginaLote(loteId, paginaId)
+          grupoDescartadasBackendId = resp.grupo_descartadas_id
+        } catch {
+          // Si falla la red, mover localmente al grupo Descartadas
+        }
+      }
+
+      setGruposLocales((prev) => {
+        const gOrigen = prev.find((g) => g.id === grupoOrigenId)
+        if (!gOrigen) return prev
+
+        const pagsOrigen = gOrigen.paginas || []
+        const pagina = pagsOrigen.find((p) => p.id === paginaId)
+        if (!pagina) return prev
+
+        const pagsRestantes = pagsOrigen.filter((p) => p.id !== paginaId)
+
+        // Buscar si ya existe el grupo Descartadas
+        const existenteDescartadas = prev.find((g) => g.estado === 'descartadas')
+        const idDescartadas =
+          existenteDescartadas?.id ||
+          grupoDescartadasBackendId ||
+          Number(`999${loteId || 1}`)
+
+        const grupoDescartadasActualizado: Grupo = existenteDescartadas
+          ? {
+              ...existenteDescartadas,
+              id: idDescartadas,
+              paginas: [...(existenteDescartadas.paginas || []), pagina],
+              totalPaginas: (existenteDescartadas.paginas?.length || 0) + 1,
+            }
+          : {
+              id: idDescartadas,
+              loteId: gOrigen.loteId,
+              totalPaginas: 1,
+              tipoDocumentoSugerido: null,
+              estado: 'descartadas',
+              paginas: [pagina],
+            }
+
+        const sinDescartadas = prev
+          .filter((g) => g.estado !== 'descartadas')
+          .map((g) => {
+            if (g.id !== grupoOrigenId) return g
+            return {
+              ...g,
+              paginas: pagsRestantes,
+              totalPaginas: pagsRestantes.length,
+            }
+          })
+          .filter((g) => (g.paginas?.length || 0) > 0)
+
+        setDecisiones((prevDec) => {
+          const next = { ...prevDec }
+          if (pagsRestantes.length === 0) {
+            delete next[grupoOrigenId]
+          }
+          if (!next[idDescartadas]) {
+            next[idDescartadas] = {
+              modo: 'nuevo',
+              nombreNuevo: '',
+              confirmado: false,
+              esDobleCara: false,
+              formatoCaras: 'paginas_correlativas',
+              modoEstructura: 'SECUENCIAL',
+              slotsEsperados: grupoDescartadasActualizado.totalPaginas,
+              etiquetasPaginas: {},
+              slotsPaginas: {},
+            }
+          }
+          return next
+        })
+
+        // Siempre poner el grupo "Descartadas" al final del lote (RF-17, RF-18)
+        return [...sinDescartadas, grupoDescartadasActualizado]
+      })
+    },
+    [loteId]
   )
 
   // Anexar la página del grupo inmediatamente siguiente
@@ -849,16 +1500,162 @@ export function useAgruparLote(loteId?: string) {
     })
   }, [])
 
-  // Desanexar última página
+  // Quitar la concatenación del último grupo absorbido (ej. separar el bloque Página K de vuelta a un grupo independiente)
+  const handleDesconcatenarUltimoGrupo = useCallback(
+    (grupoId: number) => {
+      setGruposLocales((prev) => {
+        const idx = prev.findIndex((g: Grupo) => g.id === grupoId)
+        if (idx < 0) return prev
+        const gActual = prev[idx]
+        const pags = gActual.paginas || []
+        const decActual = decisiones[grupoId]
+        const ordenMap = decActual?.ordenPaginas || {}
+
+        const bloquesUnicos = Array.from(
+          new Set(pags.map((p) => ordenMap[p.id] || 1))
+        ).sort((a, b) => a - b)
+
+        // Si no hay múltiples bloques concatenados, simplemente desactivar el modo de concatenación interna
+        if (bloquesUnicos.length < 2) {
+          setDecisiones((prevDec) => {
+            const dec = prevDec[grupoId]
+            if (!dec) return prevDec
+            return {
+              ...prevDec,
+              [grupoId]: {
+                ...dec,
+                modoEstructura: 'INDEPENDIENTE',
+                esDobleCara: false,
+                esMultipagina: false,
+                slotsEsperados: 1,
+                ordenPaginas: {},
+                slotsPaginas: {},
+                etiquetasPaginas: {},
+              },
+            }
+          })
+          return prev
+        }
+
+        const ultimoOrden = bloquesUnicos[bloquesUnicos.length - 1]
+        const pagsUltimoBloque = pags.filter((p) => (ordenMap[p.id] || 1) === ultimoOrden)
+        const pagsRestantes = pags.filter((p) => (ordenMap[p.id] || 1) !== ultimoOrden)
+
+        if (pagsUltimoBloque.length === 0 || pagsRestantes.length === 0) {
+          return prev
+        }
+
+        const grupoModificado: Grupo = {
+          ...gActual,
+          paginas: pagsRestantes,
+          totalPaginas: pagsRestantes.length,
+        }
+
+        const nuevoGrupoId = Number(
+          `${Date.now() % 1000000}${Math.floor(Math.random() * 1000)}`
+        )
+        const nuevoGrupo: Grupo = {
+          id: nuevoGrupoId,
+          loteId: gActual.loteId,
+          totalPaginas: pagsUltimoBloque.length,
+          tipoDocumentoSugerido: null,
+          estado: 'nuevo',
+          paginas: pagsUltimoBloque,
+        }
+
+        const bloquesRestantes = bloquesUnicos.length - 1
+
+        setDecisiones((prevDec) => {
+          const dec = prevDec[grupoId]
+          const next = { ...prevDec }
+
+          if (dec) {
+            if (bloquesRestantes <= 1) {
+              // Si solo queda el bloque Página 1, el grupo vuelve a su estado normal independiente
+              next[grupoId] = {
+                ...dec,
+                modoEstructura: 'INDEPENDIENTE',
+                esDobleCara: false,
+                esMultipagina: false,
+                slotsEsperados: 1,
+                ordenPaginas: {},
+                slotsPaginas: {},
+                etiquetasPaginas: {},
+              }
+            } else {
+              const nuevoOrden: Record<number, number> = {}
+              const nuevosSlots: Record<number, string> = {}
+              const nuevasEtiquetas: Record<number, string> = {}
+              pagsRestantes.forEach((p) => {
+                const ord = ordenMap[p.id] || 1
+                nuevoOrden[p.id] = ord
+                nuevosSlots[p.id] = `Página ${ord}`
+                nuevasEtiquetas[p.id] =
+                  dec.modoEstructura === 'ANVERSO_REVERSO' && bloquesRestantes === 2
+                    ? ord === 1
+                      ? 'Página 1 (Anverso)'
+                      : 'Página 2 (Reverso)'
+                    : `Página ${ord}`
+              })
+
+              const modoRestante: ModoEstructura =
+                bloquesRestantes > 2
+                  ? 'MULTIPAGINA'
+                  : dec.modoEstructura === 'ANVERSO_REVERSO'
+                    ? 'ANVERSO_REVERSO'
+                    : 'SECUENCIAL'
+
+              next[grupoId] = {
+                ...dec,
+                modoEstructura: modoRestante,
+                esDobleCara: modoRestante === 'ANVERSO_REVERSO',
+                esMultipagina: bloquesRestantes > 2,
+                slotsEsperados: bloquesRestantes,
+                ordenPaginas: nuevoOrden,
+                slotsPaginas: nuevosSlots,
+                etiquetasPaginas: nuevasEtiquetas,
+              }
+            }
+          }
+
+          next[nuevoGrupoId] = {
+            modo: 'nuevo',
+            nombreNuevo: '',
+            confirmado: false,
+            esDobleCara: false,
+            formatoCaras: 'paginas_correlativas',
+            modoEstructura: 'INDEPENDIENTE',
+            slotsEsperados: 1,
+            ordenPaginas: {},
+            etiquetasPaginas: {},
+            slotsPaginas: {},
+          }
+
+          return next
+        })
+
+        return [...prev.slice(0, idx), grupoModificado, nuevoGrupo, ...prev.slice(idx + 1)]
+      })
+    },
+    [decisiones]
+  )
+
+  // Desanexar última página o último bloque concatenado
   const handleDesanexarUltimaPagina = useCallback(
     (grupoId: number) => {
+      const dec = decisiones[grupoId]
+      const bloquesUnicos = new Set(Object.values(dec?.ordenPaginas || {}))
+      if (bloquesUnicos.size >= 2) {
+        handleDesconcatenarUltimoGrupo(grupoId)
+        return
+      }
       const g = grupos.find((item) => item.id === grupoId)
       const pags = g?.paginas || []
       if (pags.length <= 1) return
       const ultima = pags[pags.length - 1]
       handleRemoverPagina(grupoId, ultima.id)
     },
-    [grupos, handleRemoverPagina]
+    [grupos, decisiones, handleRemoverPagina, handleDesconcatenarUltimoGrupo]
   )
 
   // Separar páginas de un grupo en documentos individuales
@@ -916,8 +1713,20 @@ export function useAgruparLote(loteId?: string) {
         if (gruposElegidos.length < 2) return prev
 
         const todasPaginas: Pagina[] = []
-        gruposElegidos.forEach((g) => {
-          todasPaginas.push(...(g.paginas || []))
+        const ordenPaginas: Record<number, number> = {}
+        const slots: Record<number, string> = {}
+        const etiquetas: Record<number, string> = {}
+
+        // Cada grupo elegido aporta sus N páginas como el bloque Página (idxGrupo + 1)
+        gruposElegidos.forEach((g, idxGrupo) => {
+          const nroBloque = idxGrupo + 1
+          const slot = `Página ${nroBloque}`
+          ;(g.paginas || []).forEach((p) => {
+            todasPaginas.push(p)
+            ordenPaginas[p.id] = nroBloque
+            slots[p.id] = slot
+            etiquetas[p.id] = slot
+          })
         })
 
         const primerGrupo = gruposElegidos[0]
@@ -937,15 +1746,6 @@ export function useAgruparLote(loteId?: string) {
           const next = { ...prevDec }
           otrosIds.forEach((id) => delete next[id])
 
-          const slots: Record<number, string> = {}
-          const etiquetas: Record<number, string> = {}
-
-          todasPaginas.forEach((p, idx) => {
-            const slot = `Pág. ${idx + 1}`
-            slots[p.id] = slot
-            etiquetas[p.id] = slot
-          })
-
           next[primerGrupo.id] = {
             modo: tipoIdSeleccionado ? 'existente' : 'nuevo',
             tipoId: tipoIdSeleccionado,
@@ -954,8 +1754,9 @@ export function useAgruparLote(loteId?: string) {
             esDobleCara: false,
             formatoCaras: 'paginas_correlativas',
             esMultipagina: true,
-            modoEstructura: 'MULTIPAGINA',
-            slotsEsperados: todasPaginas.length,
+            modoEstructura: gruposElegidos.length > 2 ? 'MULTIPAGINA' : 'SECUENCIAL',
+            slotsEsperados: gruposElegidos.length,
+            ordenPaginas,
             slotsPaginas: slots,
             etiquetasPaginas: etiquetas,
           }
@@ -969,10 +1770,11 @@ export function useAgruparLote(loteId?: string) {
     []
   )
 
-  // Validación de estado listo
+  // Validación de estado listo (RF-14: sin nombres duplicados; RF-19: grupo "Descartadas" puede quedar sin tipo)
   const totalGruposListos = useMemo(() => {
     if (!grupos.length) return 0
     return grupos.filter((g: Grupo) => {
+      if (g.estado === 'descartadas') return true
       const dec = decisiones[g.id]
       if (!dec) return false
       if (dec.modo === 'sugerido') return dec.confirmado
@@ -982,7 +1784,8 @@ export function useAgruparLote(loteId?: string) {
     }).length
   }, [grupos, decisiones])
 
-  const todosGruposListos = totalGruposListos === grupos.length && grupos.length > 0
+  const todosGruposListos =
+    totalGruposListos === grupos.length && grupos.length > 0 && !tieneNombresDuplicados
 
   // Confirmar y persistir final (Punto D & G)
   const handleConfirmarAgrupamiento = useCallback(async () => {
@@ -994,61 +1797,67 @@ export function useAgruparLote(loteId?: string) {
       const pags = g.paginas || []
       const etiquetas = dec?.etiquetasPaginas || {}
       const slots = dec?.slotsPaginas || {}
+      const ordenes = dec?.ordenPaginas || {}
       const pids = pags.map((p) => String(p.id))
 
+      const modoEfectivo: ModoEstructura = dec?.modoEstructura || 'INDEPENDIENTE'
+
       const estructura = pags.map((p, idx) => {
-        let defaultSlot = `Pág. ${idx + 1}`
-        if (
-          dec?.modoEstructura === 'ANVERSO_REVERSO' ||
-          (pags.length === 2 && dec?.esDobleCara)
-        ) {
-          defaultSlot = idx === 0 ? 'Anverso' : 'Reverso'
+        const ordenBloque =
+          modoEfectivo === 'INDEPENDIENTE'
+            ? 1
+            : ordenes[p.id] ||
+              (modoEfectivo === 'ANVERSO_REVERSO' ? (idx % 2) + 1 : idx + 1)
+
+        let defaultSlot = 'Muestra'
+        if (modoEfectivo === 'ANVERSO_REVERSO') {
+          defaultSlot = `Página ${ordenBloque}`
+        } else if (modoEfectivo === 'SECUENCIAL' || modoEfectivo === 'MULTIPAGINA') {
+          defaultSlot = `Página ${ordenBloque}`
         }
         const slotNombre = slots[p.id] || defaultSlot
         const defaultEti =
-          slotNombre === 'Anverso'
-            ? 'Lado A (Anverso)'
-            : slotNombre === 'Reverso'
-              ? 'Lado B (Reverso)'
-              : `Pág. ${idx + 1}`
+          modoEfectivo === 'ANVERSO_REVERSO'
+            ? ordenBloque === 1
+              ? 'Página 1 (Anverso)'
+              : `Página ${ordenBloque} (Reverso)`
+            : slotNombre
 
         return {
           pagina_id: p.id,
-          orden: idx + 1,
+          orden: ordenBloque,
           nro_pdf: p.nroPaginaEnPdf,
           slot: slotNombre,
           etiqueta: etiquetas[p.id] || defaultEti,
         }
       })
 
-      const tieneLadoB = estructura.some(
-        (e) =>
-          e.etiqueta.toLowerCase().includes('lado b') ||
-          e.etiqueta.toLowerCase().includes('reverso') ||
-          e.slot.toLowerCase().includes('reverso')
-      )
+      const tieneLadoB =
+        modoEfectivo !== 'INDEPENDIENTE' &&
+        estructura.some(
+          (e) =>
+            e.etiqueta.toLowerCase().includes('lado b') ||
+            e.etiqueta.toLowerCase().includes('reverso') ||
+            e.slot.toLowerCase().includes('reverso')
+        )
 
+      const bloquesDistintos = new Set(estructura.map((e) => e.orden)).size
       const slotsEsperados =
-        dec?.slotsEsperados ||
-        (dec?.modoEstructura === 'ANVERSO_REVERSO' ? 2 : pags.length)
+        modoEfectivo === 'INDEPENDIENTE'
+          ? 1
+          : dec?.slotsEsperados || Math.max(2, bloquesDistintos)
 
-      const estaIncompleto = pags.length < slotsEsperados
+      const estaIncompleto = modoEfectivo !== 'INDEPENDIENTE' && pags.length < slotsEsperados
 
       return {
         grupoId: String(g.id),
         tipoDocumentoId: dec?.modo !== 'nuevo' && dec?.tipoId ? dec.tipoId : null,
         nombreNuevoTipo:
           dec?.modo === 'nuevo' && dec?.nombreNuevo ? dec.nombreNuevo.trim() : null,
-        esDobleCara: Boolean(dec?.esDobleCara || tieneLadoB),
+        esDobleCara: Boolean(modoEfectivo === 'ANVERSO_REVERSO' || tieneLadoB),
         paginaIds: pids,
         estructuraPaginas: estructura,
-        modoEstructura:
-          dec?.modoEstructura ||
-          (pags.length === 2
-            ? 'ANVERSO_REVERSO'
-            : pags.length > 2
-              ? 'MULTIPAGINA'
-              : 'INDEPENDIENTE'),
+        modoEstructura: modoEfectivo,
         slotsEsperados,
         estaIncompleto,
         alertaOrigenMixto: Boolean(dec?.alertaOrigenMixto),
@@ -1091,6 +1900,8 @@ export function useAgruparLote(loteId?: string) {
     tiposExistentes,
     decisiones,
     nombresEnEsteLote,
+    gruposConNombreDuplicado,
+    tieneNombresDuplicados,
     alertaOrigen,
     portapapeles,
     loadingLote,
@@ -1115,16 +1926,21 @@ export function useAgruparLote(loteId?: string) {
     handleToggleDobleCara,
     handleCambiarFormatoCaras,
     handleCambiarModoEstructura,
+    handleToggleParMixto,
     handleInvertirCaras,
     handleAnexarSiguientePagina,
     handleVincularReversoConSiguiente,
     handleRemoverPagina,
+    handleDescartarPagina,
     handleMoverPagina,
+    handleReordenarPaginas,
     handleCambiarEtiquetaPagina,
     handleMoverPaginaAGrupo,
     handleTraerPaginaDeGrupo,
     handleFusionarGrupos,
+    handleFusionarMultiplesGrupos,
     handleCrearTipoMultipagina,
+    handleDesconcatenarUltimoGrupo,
     handleDesanexarUltimaPagina,
     handleSepararGrupoEnPaginasIndividuales,
     handleConfirmarAgrupamiento,

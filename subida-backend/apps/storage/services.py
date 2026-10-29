@@ -30,6 +30,16 @@ class MinIOService:
         )
         return key
 
+    def upload_lote_documento_pdf(self, lote_id, documento_id, file_content: bytes) -> str:
+        key = f"lotes/{lote_id}/documentos/{documento_id}.pdf"
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=file_content,
+            ContentType='application/pdf',
+        )
+        return key
+
     def upload_thumbnail(self, codigo_unidad: str, thumb_uuid: str, thumb_content: bytes) -> str:
         key = f"unidades/{codigo_unidad}/thumbs/{thumb_uuid}.png"
         try:

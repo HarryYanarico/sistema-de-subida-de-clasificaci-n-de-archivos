@@ -5,6 +5,7 @@ import { ParejaDobleCaraCard } from './ParejaDobleCaraCard'
 import { DocumentoBorrador } from './ParejaDobleCaraCard.types'
 import { Pagina, ParejaSugerida } from '@app-types/documento.types'
 import { CREAR_DOCUMENTO_CON_PAGINAS } from '@graphql/mutations/documento.mutations'
+import { guardarEstructuraGrupo } from '../../services/upload.service'
 import { CheckCircle2, Loader2, Sparkles, AlertCircle } from 'lucide-react'
 
 export interface GrupoPaginasManagerProps {
@@ -18,6 +19,7 @@ export interface GrupoPaginasManagerProps {
 
 export function GrupoPaginasManager({
   loteId,
+  grupoId,
   paginas,
   parejasSugeridas = [],
   tipoDocumentoId,
@@ -73,6 +75,18 @@ export function GrupoPaginasManager({
   const [errorGlobal, setErrorGlobal] = useState<string | null>(null)
   const [crearDocumentoConPaginasMutation] = useMutation(CREAR_DOCUMENTO_CON_PAGINAS)
 
+  const persistirEnBackend = (docsActualizados: DocumentoBorrador[]) => {
+    if (!grupoId) return
+    guardarEstructuraGrupo(grupoId, {
+      documentos: docsActualizados.map((d) => ({
+        es_doble_cara: Boolean(d.esDobleCara),
+        pagina_ids: d.paginas.map((p) => p.id),
+      })),
+    }).catch(() => {
+      // Ignorar errores transitorios en sincronización automática
+    })
+  }
+
   // Desmarcar checkbox: separa las 2 páginas en documentos individuales independientes
   const handleToggleDobleCara = (docId: string, checked: boolean) => {
     setDocumentos((prev) => {
@@ -99,11 +113,14 @@ export function GrupoPaginasManager({
           },
           ...prev.slice(docIndex + 1),
         ]
+        persistirEnBackend(nuevos)
         return nuevos
       }
 
       // Si se re-marca
-      return prev.map((d) => (d.id === docId ? { ...d, esDobleCara: checked } : d))
+      const actualizados = prev.map((d) => (d.id === docId ? { ...d, esDobleCara: checked } : d))
+      persistirEnBackend(actualizados)
+      return actualizados
     })
   }
 
@@ -125,7 +142,7 @@ export function GrupoPaginasManager({
         .filter((d) => d.paginas.length > 0)
 
       // 2. Insertarla en el documento destino
-      return sinLaPagina.map((d) => {
+      const actualizados = sinLaPagina.map((d) => {
         if (d.id !== docId) return d
         const nuevasPags = [...d.paginas, pagObj].sort((a, b) => a.nroPaginaEnPdf - b.nroPaginaEnPdf)
         return {
@@ -134,6 +151,8 @@ export function GrupoPaginasManager({
           esDobleCara: nuevasPags.length >= 2,
         }
       })
+      persistirEnBackend(actualizados)
+      return actualizados
     })
   }
 
@@ -164,12 +183,14 @@ export function GrupoPaginasManager({
         paginas: [pagObj],
       }
 
-      return [
+      const actualizados = [
         ...prev.slice(0, docIndex),
         docActualizado,
         docNuevo,
         ...prev.slice(docIndex + 1),
       ]
+      persistirEnBackend(actualizados)
+      return actualizados
     })
   }
 

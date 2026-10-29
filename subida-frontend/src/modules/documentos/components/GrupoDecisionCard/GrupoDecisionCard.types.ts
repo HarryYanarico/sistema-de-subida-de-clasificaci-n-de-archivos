@@ -1,4 +1,4 @@
-import { Grupo, Pagina } from '@app-types/documento.types'
+import { Grupo, Pagina, ModoEstructura } from '@app-types/documento.types'
 import { TipoDocumento } from '@app-types/tipo-documento.types'
 import { DecisionGrupo } from '../../hooks/useAgruparLote'
 import { ItemPortapapeles } from '../PortapapelesFlotante/PortapapelesFlotante'
@@ -9,6 +9,10 @@ export interface GrupoDecisionCardProps {
   decision: DecisionGrupo
   tiposExistentes: TipoDocumento[]
   nombresEnEsteLote?: string[]
+  esNombreDuplicado?: boolean
+  esGrupoDescartadas?: boolean
+  colapsadoPorDefecto?: boolean
+  densidad?: 'comoda' | 'compacta'
   puedeCopiarAlSiguiente?: boolean
   puedeVincularConSiguiente?: boolean
   siguienteNumeroGrupo?: number
@@ -28,17 +32,21 @@ export interface GrupoDecisionCardProps {
   onAnexarSiguientePagina?: (grupoId: number, comoLadoB?: boolean) => void
   onVincularReversoConSiguiente?: (grupoId: number) => void
   onRemoverPagina?: (grupoId: number, paginaId: number) => void
+  onDescartarPagina?: (grupoId: number, paginaId: number) => void
   onMoverPagina?: (grupoId: number, indexActual: number, direccion: 'izquierda' | 'derecha') => void
+  onReordenarPaginas?: (grupoId: number, indexOrigen: number, indexDestino: number) => void
+  onToggleParMixto?: (grupoId: number, indexPagina: number) => void
   onCambiarEtiquetaPagina?: (grupoId: number, paginaId: number, etiqueta: string) => void
   onMoverPaginaAGrupo?: (paginaId: number, grupoOrigenId: number, grupoDestinoId: number, slotDestino?: string) => void
   onTraerPaginaDeGrupo?: (grupoDestinoId: number, grupoOrigenId: number, paginaId: number, slotDestino?: string) => void
   onFusionarGrupos?: (grupoOrigenId: number, grupoDestinoId: number, comoLadoB?: boolean) => void
-  onCambiarModoEstructura?: (grupoId: number, modo: 'INDEPENDIENTE' | 'ANVERSO_REVERSO' | 'MULTIPAGINA') => void
+  onCambiarModoEstructura?: (grupoId: number, modo: ModoEstructura) => void
   onAbrirSelectorMoverPagina?: (pagina: Pagina, grupoId: number) => void
-  onAbrirSelectorTraerPagina?: (grupoId: number) => void
+  onAbrirSelectorTraerPagina?: (grupoId: number, slotDestino?: string) => void
   onAbrirSelectorFusionarGrupo?: (grupoId: number) => void
   onTomarPaginaEnPortapapeles?: (pagina: Pagina, grupoId: number, numeroGrupoVisible: number) => void
   onPegarPaginaDesdePortapapeles?: (grupoDestinoId: number, slotDestino?: string) => void
+  onDesconcatenarUltimoGrupo?: (grupoId: number) => void
   onDesanexarUltimaPagina?: (grupoId: number) => void
   onSepararGrupo?: (grupoId: number) => void
   onVerTodasPaginas: (grupo: Grupo) => void

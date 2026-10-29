@@ -247,39 +247,26 @@ export function SelectorInteractivoPaginasModal({
                         )}
                       </div>
 
-                      <div className="mt-1.5 space-y-0.5">
-                        {p.pdfOrigen && (
+                      {p.pdfOrigen && (
+                        <div className="mt-1.5">
                           <span
                             className="text-[9px] text-muted-foreground font-mono block truncate"
                             title={p.pdfOrigen}
                           >
                             {p.pdfOrigen}
                           </span>
-                        )}
-                        <p className="text-[10px] text-muted-foreground line-clamp-2">
-                          {p.textoOcr ? p.textoOcr.slice(0, 50) : 'Sin texto OCR'}
-                        </p>
-                      </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="pt-2 border-t space-y-1">
+                    <div className="pt-2 border-t">
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
                         onClick={() => handleSeleccionar(grupoId, p.id, undefined)}
-                        className="w-full h-6 text-[10px] gap-1 text-primary hover:bg-primary/10 border-primary/30"
+                        className="w-full h-7 text-xs font-semibold gap-1.5"
                       >
-                        <Plus className="h-3 w-3" /> Traer como siguiente
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleSeleccionar(grupoId, p.id, 'Reverso')}
-                        className="w-full h-6 text-[10px] gap-1 text-purple-700 dark:text-purple-300 hover:bg-purple-500/10 border-purple-300 dark:border-purple-600/30"
-                      >
-                        🟣 Traer como Reverso
+                        <Plus className="h-3.5 w-3.5" /> Agregar esta página
                       </Button>
                     </div>
                   </div>

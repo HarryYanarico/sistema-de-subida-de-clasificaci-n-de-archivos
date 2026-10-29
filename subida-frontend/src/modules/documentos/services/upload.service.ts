@@ -207,3 +207,112 @@ export async function uploadBatchFile(
 ): Promise<ResultadoBatch> {
   return uploadBatchFiles([file], userId, personaId)
 }
+
+/**
+ * Formatea la etiqueta de origen de una página como `pdf_XX.pdf, pág N` (RF-12, RF-15).
+ */
+export function formatearOrigenPagina(
+  pdfOrigen?: string | null,
+  nroPaginaEnPdf?: number | null
+): string {
+  const nro = nroPaginaEnPdf ?? 1
+  if (!pdfOrigen) return `pág ${nro}`
+  const partes = pdfOrigen.replace(/\\/g, '/').split('/')
+  const nombreArchivo = partes[partes.length - 1] || pdfOrigen
+  return `${nombreArchivo}, pág ${nro}`
+}
+
+/**
+ * Extrae únicamente el nombre del archivo PDF sin prefijos de carpeta en MinIO.
+ */
+export function extraerNombreArchivoPdf(pdfOrigen?: string | null): string {
+  if (!pdfOrigen) return ''
+  const partes = pdfOrigen.replace(/\\/g, '/').split('/')
+  return partes[partes.length - 1] || pdfOrigen
+}
+
+/**
+ * RT-03 / RT-09: Mueve una página al grupo especial "Descartadas" al final del lote.
+ */
+export async function descartarPaginaLote(
+  loteId: number | string,
+  paginaId: number | string
+): Promise<{
+  success: boolean
+  pagina_id: number
+  grupo_origen_id: number | null
+  grupo_descartadas_id: number
+  total_descartadas: number
+  total_grupos: number
+}> {
+  const res = await fetch(`/api/upload/lote/${loteId}/descartar-pagina/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pagina_id: Number(paginaId) }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => null)
+    throw new Error(err?.message || 'Error al descartar la página')
+  }
+  return res.json()
+}
+
+/**
+ * RT-04 / RT-10: Fusiona uno o más grupos origen dentro de un grupo destino en el backend.
+ */
+export async function fusionarGruposLote(
+  loteId: number | string,
+  grupoDestinoId: number | string,
+  grupoOrigenIds: (number | string)[]
+): Promise<{
+  success: boolean
+  grupo_destino_id: number
+  grupos_fusionados: number[]
+  total_paginas: number
+  total_grupos: number
+}> {
+  const res = await fetch(`/api/upload/lote/${loteId}/fusionar-grupos/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grupo_destino_id: Number(grupoDestinoId),
+      grupo_origen_ids: grupoOrigenIds.map(Number),
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => null)
+    throw new Error(err?.message || 'Error al fusionar los grupos')
+  }
+  return res.json()
+}
+
+/**
+ * RT-05 / RT-11: Persiste la estructura interna del grupo (orden de páginas + relación anverso/reverso)
+ * en la base de datos (`documentos.grupo_id` y `documentos_paginas.orden`).
+ */
+export async function guardarEstructuraGrupo(
+  grupoId: number | string,
+  payload: {
+    modo?: string
+    pagina_ids?: number[]
+    documentos?: { es_doble_cara: boolean; pagina_ids: number[] }[]
+  }
+): Promise<{
+  success: boolean
+  grupo_id: number
+  total_documentos: number
+}> {
+  const res = await fetch(`/api/upload/grupo/${grupoId}/estructura/`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => null)
+    throw new Error(err?.message || 'Error al persistir la estructura del grupo')
+  }
+  return res.json()
+}
